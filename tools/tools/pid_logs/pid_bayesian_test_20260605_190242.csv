@@ -1,0 +1,2 @@
+timestamp,elapsed_s,kp,ki,kd,setpoint,maxPwm,angle,error,pidOutput,leftPwm,rightPwm,motorsEnabled,safetyStop,faultMessage
+1780704162.9626648,0.3472299999848474,18.52202311,300.0,0.948270807,-4.5,200,-0.522026,-3.977974,111.3036726,0,0,False,True,Angle exceeds safe limit
