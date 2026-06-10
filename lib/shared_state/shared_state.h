@@ -41,6 +41,11 @@ struct RobotState {
   float gyroZHoldDeadband = 0.0f;
   int gyroZHoldMaxCorrection = 0;
   int gyroZHoldCorrection = 0;
+  bool speedHoldEnabled = false;
+  double speedHoldKp = 0.0;
+  float speedHoldDeadband = 0.0f;
+  double speedHoldMaxAngleDeg = 0.0;
+  double speedHoldAngleCorrectionDeg = 0.0;
 
   int leftPwm = 0;
   int rightPwm = 0;
@@ -103,6 +108,8 @@ struct RobotCommand {
   bool updateEncoderSyncTarget = false;
   bool updateGyroZHoldEnabled = false;
   bool updateGyroZHoldConfig = false;
+  bool updateSpeedHoldEnabled = false;
+  bool updateSpeedHoldConfig = false;
   double pidKp = 0.0;
   double pidKi = 0.0;
   double pidKd = 0.0;
@@ -118,6 +125,9 @@ struct RobotCommand {
   bool gyroZHoldEnabled = false;
   double gyroZHoldKp = 0.0;
   int gyroZHoldMaxCorrection = 0;
+  bool speedHoldEnabled = false;
+  double speedHoldKp = 0.0;
+  double speedHoldMaxAngleDeg = 0.0;
   int pidMaxPwm = 0;
   int motorDeadzonePwm = 0;
 };
@@ -157,5 +167,7 @@ void requestEncoderSyncConfig(double kp, float deadband, int maxCorrection);
 void requestEncoderSyncTarget(float targetDifference);
 void requestGyroZHoldEnabled(bool enabled);
 void requestGyroZHoldConfig(double kp, int maxCorrection);
+void requestSpeedHoldEnabled(bool enabled);
+void requestSpeedHoldConfig(double kp, double maxAngleDeg);
 
 }  // namespace SharedState

@@ -64,6 +64,11 @@ String stateAsJson() {
   doc["gyroZHoldDeadband"] = state.gyroZHoldDeadband;
   doc["gyroZHoldMaxCorrection"] = state.gyroZHoldMaxCorrection;
   doc["gyroZHoldCorrection"] = state.gyroZHoldCorrection;
+  doc["speedHoldEnabled"] = state.speedHoldEnabled;
+  doc["speedHoldKp"] = state.speedHoldKp;
+  doc["speedHoldDeadband"] = state.speedHoldDeadband;
+  doc["speedHoldMaxAngle"] = state.speedHoldMaxAngleDeg;
+  doc["speedHoldAngleCorrection"] = state.speedHoldAngleCorrectionDeg;
   doc["leftPwm"] = state.leftPwm;
   doc["rightPwm"] = state.rightPwm;
   doc["basePwm"] = state.balancePwm;
@@ -255,6 +260,22 @@ void handleMessage(uint8_t clientId, const char *payload) {
                                          Config::GYRO_Z_HOLD_MAX_CORRECTION_MAX);
     SharedState::requestGyroZHoldConfig(kp, maxCorrection);
     sendMessage(clientId, "ack", "gyro Z hold updated");
+  } else if (strcmp(type, "enable_speed_hold") == 0) {
+    const bool enabled = doc["enabled"] | false;
+    SharedState::requestSpeedHoldEnabled(enabled);
+    sendMessage(clientId, "ack", enabled ? "speed hold enabled" : "speed hold disabled");
+  } else if (strcmp(type, "set_speed_hold") == 0) {
+    if (!requireNumber(doc, "kp") || !requireNumber(doc, "maxAngle")) {
+      sendMessage(clientId, "error", "invalid speed hold values");
+      return;
+    }
+    const double kp = clampValue(doc["kp"].as<double>(), Config::SPEED_HOLD_KP_MIN,
+                                 Config::SPEED_HOLD_KP_MAX);
+    const double maxAngle = clampValue(doc["maxAngle"].as<double>(),
+                                       Config::SPEED_HOLD_MAX_ANGLE_MIN_DEG,
+                                       Config::SPEED_HOLD_MAX_ANGLE_MAX_DEG);
+    SharedState::requestSpeedHoldConfig(kp, maxAngle);
+    sendMessage(clientId, "ack", "speed hold updated");
   } else if (strcmp(type, "set_setpoint") == 0) {
     if (!requireNumber(doc, "setpoint")) {
       sendMessage(clientId, "error", "invalid setpoint");
@@ -394,6 +415,20 @@ const char PAGE[] PROGMEM = R"rawliteral(
     <button class="ok" onclick="send({type:'enable_gyro_z_hold',enabled:true})">Habilitar gyro Z</button>
     <button class="warn" onclick="send({type:'enable_gyro_z_hold',enabled:false})">Deshabilitar gyro Z</button>
   </section>
+  <section><h2>Quieto por velocidad</h2>
+    <p>Usa la velocidad promedio de encoders para inclinar levemente el setpoint y frenar desplazamientos.</p>
+    <div class="grid">
+      <div class="item"><div class="label">Estado</div><div class="value" id="speedHoldEnabled">--</div></div>
+      <div class="item"><div class="label">Correccion angulo</div><div class="value" id="speedHoldAngleCorrection">--</div></div>
+      <div class="item"><div class="label">Speed avg</div><div class="value" id="speedHoldAverage">--</div></div>
+      <div class="item"><div class="label">Deadband count/s</div><div class="value" id="speedHoldDeadband">--</div></div>
+    </div>
+    <label>K velocidad</label><input id="speedHoldKp" type="number" step="0.0001">
+    <label>Correccion maxima angulo</label><input id="speedHoldMaxAngle" type="number" step="0.1">
+    <button onclick="applySpeedHold()">Actualizar velocidad</button><br>
+    <button class="ok" onclick="send({type:'enable_speed_hold',enabled:true})">Habilitar velocidad</button>
+    <button class="warn" onclick="send({type:'enable_speed_hold',enabled:false})">Deshabilitar velocidad</button>
+  </section>
 </main>
 <script>
 let ws;
@@ -406,6 +441,7 @@ let iTermLimitDirty = false;
 let encoderSyncDirty = false;
 let encoderSyncTargetDirty = false;
 let gyroZHoldDirty = false;
+let speedHoldDirty = false;
 function num(id){return Number(document.getElementById(id).value)}
 function setText(id,value,digits=2){const el=document.getElementById(id); if(!el)return; el.textContent=typeof value==='number'?value.toFixed(digits):value;}
 function setInput(id,value,digits=3,dirty=false){const el=document.getElementById(id); if(!el || dirty || document.activeElement===el || typeof value!=='number')return; el.value=value.toFixed(digits);}
@@ -424,6 +460,7 @@ function applyIntegralLimit(){send({type:'set_integral_limit',integralLimit:num(
 function applyITermLimit(){send({type:'set_i_term_limit',iTermLimit:num('iTermLimit')}); iTermLimitDirty=false;}
 function applyEncoderSync(){send({type:'set_encoder_sync',kp:num('encoderSyncKp'),deadband:num('encoderSyncDeadband'),maxCorrection:num('encoderSyncMaxCorrection')}); encoderSyncDirty=false;}
 function applyGyroZHold(){send({type:'set_gyro_z_hold',kp:num('gyroZHoldKp'),maxCorrection:num('gyroZHoldMaxCorrection')}); gyroZHoldDirty=false;}
+function applySpeedHold(){send({type:'set_speed_hold',kp:num('speedHoldKp'),maxAngle:num('speedHoldMaxAngle')}); speedHoldDirty=false;}
 function applyEncoderSyncTarget(){
   const motor=document.getElementById('encoderSyncFastMotor').value;
   const magnitude=Math.abs(num('encoderSyncTargetMagnitude'));
@@ -446,6 +483,7 @@ function markDirty(){
   document.getElementById('iTermLimit').addEventListener('input',()=>iTermLimitDirty=true);
   ['encoderSyncKp','encoderSyncDeadband','encoderSyncMaxCorrection'].forEach(id=>document.getElementById(id).addEventListener('input',()=>encoderSyncDirty=true));
   ['gyroZHoldKp','gyroZHoldMaxCorrection'].forEach(id=>document.getElementById(id).addEventListener('input',()=>gyroZHoldDirty=true));
+  ['speedHoldKp','speedHoldMaxAngle'].forEach(id=>document.getElementById(id).addEventListener('input',()=>speedHoldDirty=true));
   document.getElementById('encoderSyncFastMotor').addEventListener('change',()=>encoderSyncTargetDirty=true);
   document.getElementById('encoderSyncTargetMagnitude').addEventListener('input',()=>encoderSyncTargetDirty=true);
 }
@@ -463,11 +501,13 @@ function connect(){
     setText('outputBeforeLimit',data.outputBeforeLimit); setText('outputAfterLimit',data.outputAfterLimit);
     setText('leftEncoder',data.leftEncoder,0); setText('rightEncoder',data.rightEncoder,0); setText('leftSpeed',data.leftSpeed); setText('rightSpeed',data.rightSpeed); setText('speedDifference',data.speedDifference); setText('encoderSyncTargetDifference',data.encoderSyncTargetDifference); setText('encoderSyncError',data.encoderSyncError); setText('encoderSyncCorrection',data.encoderSyncCorrection,0); setText('encoderSyncEnabled',data.encoderSyncEnabled?'ON':'OFF',0);
     setText('gyroZHoldEnabled',data.gyroZHoldEnabled?'ON':'OFF',0); setText('gyroZHoldCorrection',data.gyroZHoldCorrection,0); setText('gyroZHoldDeadband',data.gyroZHoldDeadband);
+    setText('speedHoldEnabled',data.speedHoldEnabled?'ON':'OFF',0); setText('speedHoldAngleCorrection',data.speedHoldAngleCorrection); setText('speedHoldAverage',data.speedAverage); setText('speedHoldDeadband',data.speedHoldDeadband);
     setInput('kp',data.kp,3,pidDirty); setInput('ki',data.ki,3,pidDirty); setInput('kd',data.kd,3,pidDirty); setInput('setpoint',data.setpoint,3,setpointDirty); setInput('maxPwm',data.maxPwm,0,pwmDirty);
     setInput('motorDeadzonePwm',data.motorDeadzonePwm,0,deadzoneDirty);
     setInput('integralLimit',data.integralLimit,3,integralLimitDirty); setInput('iTermLimit',data.iTermLimit,1,iTermLimitDirty);
     setInput('encoderSyncKp',data.encoderSyncKp,4,encoderSyncDirty); setInput('encoderSyncDeadband',data.encoderSyncDeadband,1,encoderSyncDirty); setInput('encoderSyncMaxCorrection',data.encoderSyncMaxCorrection,0,encoderSyncDirty);
     setInput('gyroZHoldKp',data.gyroZHoldKp,4,gyroZHoldDirty); setInput('gyroZHoldMaxCorrection',data.gyroZHoldMaxCorrection,0,gyroZHoldDirty);
+    setInput('speedHoldKp',data.speedHoldKp,5,speedHoldDirty); setInput('speedHoldMaxAngle',data.speedHoldMaxAngle,2,speedHoldDirty);
     updateFastMotorInputs(data.encoderSyncTargetDifference);
   };
 }

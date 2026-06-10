@@ -37,6 +37,11 @@ bool gyroZHoldEnabled = Config::INITIAL_GYRO_Z_HOLD_ENABLED;
 double gyroZHoldKp = Config::INITIAL_GYRO_Z_HOLD_KP;
 int gyroZHoldMaxCorrection = Config::INITIAL_GYRO_Z_HOLD_MAX_CORRECTION;
 int gyroZHoldCorrection = 0;
+bool speedHoldEnabled = Config::INITIAL_SPEED_HOLD_ENABLED;
+double speedHoldKp = Config::INITIAL_SPEED_HOLD_KP;
+double speedHoldMaxAngleDeg = Config::INITIAL_SPEED_HOLD_MAX_ANGLE_DEG;
+double manualAngleSetpointDeg = Config::INITIAL_ANGLE_SETPOINT_DEG;
+double speedHoldAngleCorrectionDeg = 0.0;
 int balancePwm = 0;
 int finalLeftPwm = 0;
 int finalRightPwm = 0;
@@ -66,6 +71,29 @@ int gyroZHoldCorrectionFromRate(float turnRateDegPerSec) {
 
   const int correction = static_cast<int>(lround(gyroZHoldKp * turnRateDegPerSec));
   return constrain(correction, -gyroZHoldMaxCorrection, gyroZHoldMaxCorrection);
+}
+
+void updateBalanceSetpointFromSpeed() {
+  speedHoldAngleCorrectionDeg = 0.0;
+  if (speedHoldEnabled && motorsEnabled && !safetyStop && !safetyFault) {
+    float activeSpeed = averageSpeed;
+    if (fabsf(activeSpeed) < Config::SPEED_HOLD_DEADBAND_COUNTS_PER_SEC) {
+      activeSpeed = 0.0f;
+    }
+
+    speedHoldAngleCorrectionDeg = -speedHoldKp * static_cast<double>(activeSpeed);
+    if (Config::INVERT_SPEED_HOLD_CORRECTION) {
+      speedHoldAngleCorrectionDeg = -speedHoldAngleCorrectionDeg;
+    }
+    speedHoldAngleCorrectionDeg = constrain(speedHoldAngleCorrectionDeg,
+                                            -speedHoldMaxAngleDeg,
+                                            speedHoldMaxAngleDeg);
+  }
+
+  const double setpoint = constrain(manualAngleSetpointDeg + speedHoldAngleCorrectionDeg,
+                                    Config::SETPOINT_MIN_DEG,
+                                    Config::SETPOINT_MAX_DEG);
+  BalancePid::setSetpoint(setpoint);
 }
 
 void setFault(const char *message) {
@@ -151,6 +179,11 @@ void fillSharedState() {
   state.gyroZHoldDeadband = Config::GYRO_Z_HOLD_DEADBAND_DPS;
   state.gyroZHoldMaxCorrection = gyroZHoldMaxCorrection;
   state.gyroZHoldCorrection = gyroZHoldCorrection;
+  state.speedHoldEnabled = speedHoldEnabled;
+  state.speedHoldKp = speedHoldKp;
+  state.speedHoldDeadband = Config::SPEED_HOLD_DEADBAND_COUNTS_PER_SEC;
+  state.speedHoldMaxAngleDeg = speedHoldMaxAngleDeg;
+  state.speedHoldAngleCorrectionDeg = speedHoldAngleCorrectionDeg;
   state.leftPwm = MotorsTest::getLeftPwm();
   state.rightPwm = MotorsTest::getRightPwm();
   state.balancePwm = balancePwm;
@@ -231,7 +264,8 @@ void handleCommand(const RobotCommand &command) {
   }
 
   if (command.updatePidSetpoint) {
-    BalancePid::setSetpoint(command.pidSetpoint);
+    manualAngleSetpointDeg = command.pidSetpoint;
+    BalancePid::setSetpoint(manualAngleSetpointDeg);
   }
 
   if (command.updatePidMaxPwm) {
@@ -289,6 +323,18 @@ void handleCommand(const RobotCommand &command) {
     gyroZHoldMaxCorrection = constrain(command.gyroZHoldMaxCorrection,
                                        Config::GYRO_Z_HOLD_MAX_CORRECTION_MIN,
                                        Config::GYRO_Z_HOLD_MAX_CORRECTION_MAX);
+  }
+
+  if (command.updateSpeedHoldEnabled) {
+    speedHoldEnabled = command.speedHoldEnabled;
+  }
+
+  if (command.updateSpeedHoldConfig) {
+    speedHoldKp = constrain(command.speedHoldKp, Config::SPEED_HOLD_KP_MIN,
+                            Config::SPEED_HOLD_KP_MAX);
+    speedHoldMaxAngleDeg = constrain(command.speedHoldMaxAngleDeg,
+                                     Config::SPEED_HOLD_MAX_ANGLE_MIN_DEG,
+                                     Config::SPEED_HOLD_MAX_ANGLE_MAX_DEG);
   }
 
   if (command.resetEncoders) {
@@ -408,6 +454,8 @@ void printPidIfDue() {
   Serial.print(BalancePid::getOutput());
   Serial.print(F(" speedDiff="));
   Serial.print(speedDifference, 2);
+  Serial.print(F(" speedHoldAngle="));
+  Serial.print(speedHoldAngleCorrectionDeg, 3);
   Serial.print(F(" syncTarget="));
   Serial.print(encoderSyncTargetDifference, 2);
   Serial.print(F(" syncError="));
@@ -440,7 +488,7 @@ void begin() {
   EncodersTest::begin();
   Imu6500Test::begin();
   BalancePid::begin();
-  BalancePid::setSetpoint(Config::INITIAL_ANGLE_SETPOINT_DEG);
+  BalancePid::setSetpoint(manualAngleSetpointDeg);
   MotorsTest::disable();
   fillSharedState();
 }
@@ -460,6 +508,7 @@ void update() {
       dtSeconds = static_cast<float>(now - previousControlMs) / 1000.0f;
     }
     previousControlMs = now;
+    updateBalanceSetpointFromSpeed();
     BalancePid::update(imu.selectedAngleDeg, imu.gyroRateDegPerSec, dtSeconds, motorsEnabled,
                        safetyStop);
   }

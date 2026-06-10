@@ -69,6 +69,8 @@ RobotCommand consumeCommand() {
     robotCommand.updateEncoderSyncTarget = false;
     robotCommand.updateGyroZHoldEnabled = false;
     robotCommand.updateGyroZHoldConfig = false;
+    robotCommand.updateSpeedHoldEnabled = false;
+    robotCommand.updateSpeedHoldConfig = false;
     xSemaphoreGive(stateMutex);
   }
   return copy;
@@ -270,6 +272,23 @@ void requestGyroZHoldConfig(double kp, int maxCorrection) {
     robotCommand.gyroZHoldKp = kp;
     robotCommand.gyroZHoldMaxCorrection = maxCorrection;
     robotCommand.updateGyroZHoldConfig = true;
+    xSemaphoreGive(stateMutex);
+  }
+}
+
+void requestSpeedHoldEnabled(bool enabled) {
+  if (stateMutex != nullptr && xSemaphoreTake(stateMutex, portMAX_DELAY) == pdTRUE) {
+    robotCommand.speedHoldEnabled = enabled;
+    robotCommand.updateSpeedHoldEnabled = true;
+    xSemaphoreGive(stateMutex);
+  }
+}
+
+void requestSpeedHoldConfig(double kp, double maxAngleDeg) {
+  if (stateMutex != nullptr && xSemaphoreTake(stateMutex, portMAX_DELAY) == pdTRUE) {
+    robotCommand.speedHoldKp = kp;
+    robotCommand.speedHoldMaxAngleDeg = maxAngleDeg;
+    robotCommand.updateSpeedHoldConfig = true;
     xSemaphoreGive(stateMutex);
   }
 }
