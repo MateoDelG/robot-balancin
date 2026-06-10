@@ -67,6 +67,8 @@ RobotCommand consumeCommand() {
     robotCommand.updateEncoderSyncEnabled = false;
     robotCommand.updateEncoderSyncConfig = false;
     robotCommand.updateEncoderSyncTarget = false;
+    robotCommand.updateGyroZHoldEnabled = false;
+    robotCommand.updateGyroZHoldConfig = false;
     xSemaphoreGive(stateMutex);
   }
   return copy;
@@ -251,6 +253,23 @@ void requestEncoderSyncTarget(float targetDifference) {
   if (stateMutex != nullptr && xSemaphoreTake(stateMutex, portMAX_DELAY) == pdTRUE) {
     robotCommand.encoderSyncTargetDifference = targetDifference;
     robotCommand.updateEncoderSyncTarget = true;
+    xSemaphoreGive(stateMutex);
+  }
+}
+
+void requestGyroZHoldEnabled(bool enabled) {
+  if (stateMutex != nullptr && xSemaphoreTake(stateMutex, portMAX_DELAY) == pdTRUE) {
+    robotCommand.gyroZHoldEnabled = enabled;
+    robotCommand.updateGyroZHoldEnabled = true;
+    xSemaphoreGive(stateMutex);
+  }
+}
+
+void requestGyroZHoldConfig(double kp, int maxCorrection) {
+  if (stateMutex != nullptr && xSemaphoreTake(stateMutex, portMAX_DELAY) == pdTRUE) {
+    robotCommand.gyroZHoldKp = kp;
+    robotCommand.gyroZHoldMaxCorrection = maxCorrection;
+    robotCommand.updateGyroZHoldConfig = true;
     xSemaphoreGive(stateMutex);
   }
 }

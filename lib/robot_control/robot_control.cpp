@@ -33,9 +33,40 @@ float encoderSyncDeadband = Config::INITIAL_ENCODER_SYNC_DEADBAND;
 int encoderSyncMaxCorrection = Config::INITIAL_ENCODER_SYNC_MAX_CORRECTION;
 float encoderSyncTargetDifference = Config::INITIAL_ENCODER_SYNC_TARGET_DIFFERENCE;
 int encoderSyncCorrection = 0;
+bool gyroZHoldEnabled = Config::INITIAL_GYRO_Z_HOLD_ENABLED;
+double gyroZHoldKp = Config::INITIAL_GYRO_Z_HOLD_KP;
+int gyroZHoldMaxCorrection = Config::INITIAL_GYRO_Z_HOLD_MAX_CORRECTION;
+int gyroZHoldCorrection = 0;
 int balancePwm = 0;
 int finalLeftPwm = 0;
 int finalRightPwm = 0;
+
+float turnRateFromGyroZ(const Imu6500Test::ImuSample &imu) {
+  float turnRate = imu.correctedGz * RAD_TO_DEG;
+  if (Config::INVERT_TURN_GYRO) {
+    turnRate = -turnRate;
+  }
+  return turnRate;
+}
+
+const char *turnDirectionFromRate(float turnRateDegPerSec) {
+  if (fabsf(turnRateDegPerSec) < Config::TURN_GYRO_DEADBAND_DPS) {
+    return "quieto";
+  }
+  return turnRateDegPerSec > 0.0f ? "derecha" : "izquierda";
+}
+
+int gyroZHoldCorrectionFromRate(float turnRateDegPerSec) {
+  if (!gyroZHoldEnabled || !motorsEnabled || safetyStop || safetyFault) {
+    return 0;
+  }
+  if (fabsf(turnRateDegPerSec) < Config::GYRO_Z_HOLD_DEADBAND_DPS) {
+    return 0;
+  }
+
+  const int correction = static_cast<int>(lround(gyroZHoldKp * turnRateDegPerSec));
+  return constrain(correction, -gyroZHoldMaxCorrection, gyroZHoldMaxCorrection);
+}
 
 void setFault(const char *message) {
   safetyStop = true;
@@ -80,6 +111,7 @@ void updateEncoderDiagnostics() {
 void fillSharedState() {
   const Imu6500Test::ImuSample imu = Imu6500Test::getSample();
   const RobotState previousState = SharedState::getState();
+  const float turnRate = turnRateFromGyroZ(imu);
 
   RobotState state;
   state.rawAx = imu.rawAx;
@@ -97,6 +129,8 @@ void fillSharedState() {
   state.angleKalmanDeg = imu.angleKalmanDeg;
   state.selectedAngleDeg = imu.selectedAngleDeg;
   state.gyroRateDegPerSec = imu.gyroRateDegPerSec;
+  state.turnRateDegPerSec = turnRate;
+  strlcpy(state.turnDirection, turnDirectionFromRate(turnRate), sizeof(state.turnDirection));
   state.rawLeftEncoder = EncodersTest::rawLeftCount();
   state.rawRightEncoder = EncodersTest::rawRightCount();
   state.correctedLeftEncoder = EncodersTest::leftCount();
@@ -112,6 +146,11 @@ void fillSharedState() {
   state.encoderSyncDeadband = encoderSyncDeadband;
   state.encoderSyncMaxCorrection = encoderSyncMaxCorrection;
   state.encoderSyncTargetDifference = encoderSyncTargetDifference;
+  state.gyroZHoldEnabled = gyroZHoldEnabled;
+  state.gyroZHoldKp = gyroZHoldKp;
+  state.gyroZHoldDeadband = Config::GYRO_Z_HOLD_DEADBAND_DPS;
+  state.gyroZHoldMaxCorrection = gyroZHoldMaxCorrection;
+  state.gyroZHoldCorrection = gyroZHoldCorrection;
   state.leftPwm = MotorsTest::getLeftPwm();
   state.rightPwm = MotorsTest::getRightPwm();
   state.balancePwm = balancePwm;
@@ -240,6 +279,18 @@ void handleCommand(const RobotCommand &command) {
                                             Config::ENCODER_SYNC_TARGET_DIFFERENCE_MAX);
   }
 
+  if (command.updateGyroZHoldEnabled) {
+    gyroZHoldEnabled = command.gyroZHoldEnabled;
+  }
+
+  if (command.updateGyroZHoldConfig) {
+    gyroZHoldKp = constrain(command.gyroZHoldKp, Config::GYRO_Z_HOLD_KP_MIN,
+                            Config::GYRO_Z_HOLD_KP_MAX);
+    gyroZHoldMaxCorrection = constrain(command.gyroZHoldMaxCorrection,
+                                       Config::GYRO_Z_HOLD_MAX_CORRECTION_MIN,
+                                       Config::GYRO_Z_HOLD_MAX_CORRECTION_MAX);
+  }
+
   if (command.resetEncoders) {
     EncodersTest::reset();
     Serial.println(F("Encoder counts reset by command"));
@@ -296,6 +347,7 @@ void updateSafety(const Imu6500Test::ImuSample &imu) {
 void applyPidToMotors() {
   balancePwm = BalancePid::getOutput();
   encoderSyncCorrection = 0;
+  gyroZHoldCorrection = 0;
   encoderSyncError = speedDifference - encoderSyncTargetDifference;
   if (encoderSyncEnabled && motorsEnabled && !safetyStop && !safetyFault) {
     float activeSyncError = encoderSyncError;
@@ -306,8 +358,10 @@ void applyPidToMotors() {
                                       -encoderSyncMaxCorrection,
                                       encoderSyncMaxCorrection);
   }
-  finalLeftPwm = balancePwm - encoderSyncCorrection;
-  finalRightPwm = balancePwm + encoderSyncCorrection;
+  const Imu6500Test::ImuSample imu = Imu6500Test::getSample();
+  gyroZHoldCorrection = gyroZHoldCorrectionFromRate(turnRateFromGyroZ(imu));
+  finalLeftPwm = balancePwm - encoderSyncCorrection - gyroZHoldCorrection;
+  finalRightPwm = balancePwm + encoderSyncCorrection + gyroZHoldCorrection;
 
   if (motorsEnabled && !safetyStop && !safetyFault) {
     MotorsTest::setLeftPwm(finalLeftPwm);
@@ -360,6 +414,8 @@ void printPidIfDue() {
   Serial.print(encoderSyncError, 2);
   Serial.print(F(" syncCorrection="));
   Serial.print(encoderSyncCorrection);
+  Serial.print(F(" gyroZHold="));
+  Serial.print(gyroZHoldCorrection);
   Serial.print(F(" leftPwm="));
   Serial.print(MotorsTest::getLeftPwm());
   Serial.print(F(" rightPwm="));

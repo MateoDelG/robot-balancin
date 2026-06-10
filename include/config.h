@@ -52,7 +52,7 @@ constexpr unsigned long MOTOR_TEST_PAUSE_MS = 700;
 
 constexpr bool MOTOR_LEFT_INVERTED = false;
 constexpr bool MOTOR_RIGHT_INVERTED = false;
-constexpr bool ENCODER_LEFT_INVERTED = false;
+constexpr bool ENCODER_LEFT_INVERTED = true;
 constexpr bool ENCODER_RIGHT_INVERTED = true;
 
 constexpr unsigned long IMU_PRINT_INTERVAL_MS = 250;
@@ -72,6 +72,16 @@ constexpr float KALMAN_R_MEASURE_MAX = 1.0f;
 constexpr float ANGLE_VERTICAL_OFFSET_DEG = -1.78f;
 constexpr bool INVERT_BALANCE_ANGLE = true;
 constexpr bool INVERT_GYRO_RATE = false;
+constexpr bool INVERT_TURN_GYRO = false;
+constexpr float TURN_GYRO_DEADBAND_DPS = 5.0f;
+constexpr bool INITIAL_GYRO_Z_HOLD_ENABLED = true;
+constexpr double INITIAL_GYRO_Z_HOLD_KP = 0.35;
+constexpr double GYRO_Z_HOLD_KP_MIN = 0.0;
+constexpr double GYRO_Z_HOLD_KP_MAX = 5.0;
+constexpr float GYRO_Z_HOLD_DEADBAND_DPS = 3.0f;
+constexpr int INITIAL_GYRO_Z_HOLD_MAX_CORRECTION = 25;
+constexpr int GYRO_Z_HOLD_MAX_CORRECTION_MIN = 0;
+constexpr int GYRO_Z_HOLD_MAX_CORRECTION_MAX = 100;
 
 constexpr double INITIAL_PID_KP = 18;
 constexpr double INITIAL_PID_KI = 300;
@@ -88,7 +98,7 @@ constexpr double INTEGRAL_LIMIT_MAX = 2.0;
 constexpr double INITIAL_I_TERM_LIMIT = 40.0;
 constexpr double I_TERM_LIMIT_MIN = 0.0;
 constexpr double I_TERM_LIMIT_MAX = 100.0;
-constexpr bool INITIAL_ENCODER_SYNC_ENABLED = true;
+constexpr bool INITIAL_ENCODER_SYNC_ENABLED = false;
 constexpr double INITIAL_ENCODER_SYNC_KP = 0.02;
 constexpr double ENCODER_SYNC_KP_MIN = 0.0;
 constexpr double ENCODER_SYNC_KP_MAX = 2.0;

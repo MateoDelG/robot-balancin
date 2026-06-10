@@ -38,6 +38,8 @@ String stateAsJson() {
   doc["complementaryAngle"] = state.angleComplementaryDeg;
   doc["kalmanAngle"] = state.angleKalmanDeg;
   doc["gyroRate"] = state.gyroRateDegPerSec;
+  doc["turnRate"] = state.turnRateDegPerSec;
+  doc["turnDirection"] = state.turnDirection;
   doc["ax"] = state.rawAx;
   doc["ay"] = state.rawAy;
   doc["az"] = state.rawAz;
@@ -57,6 +59,11 @@ String stateAsJson() {
   doc["encoderSyncKp"] = state.encoderSyncKp;
   doc["encoderSyncDeadband"] = state.encoderSyncDeadband;
   doc["encoderSyncMaxCorrection"] = state.encoderSyncMaxCorrection;
+  doc["gyroZHoldEnabled"] = state.gyroZHoldEnabled;
+  doc["gyroZHoldKp"] = state.gyroZHoldKp;
+  doc["gyroZHoldDeadband"] = state.gyroZHoldDeadband;
+  doc["gyroZHoldMaxCorrection"] = state.gyroZHoldMaxCorrection;
+  doc["gyroZHoldCorrection"] = state.gyroZHoldCorrection;
   doc["leftPwm"] = state.leftPwm;
   doc["rightPwm"] = state.rightPwm;
   doc["basePwm"] = state.balancePwm;
@@ -232,6 +239,22 @@ void handleMessage(uint8_t clientId, const char *payload) {
                                               Config::ENCODER_SYNC_TARGET_DIFFERENCE_MAX);
     SharedState::requestEncoderSyncTarget(targetDifference);
     sendMessage(clientId, "ack", "encoder sync target updated");
+  } else if (strcmp(type, "enable_gyro_z_hold") == 0) {
+    const bool enabled = doc["enabled"] | false;
+    SharedState::requestGyroZHoldEnabled(enabled);
+    sendMessage(clientId, "ack", enabled ? "gyro Z hold enabled" : "gyro Z hold disabled");
+  } else if (strcmp(type, "set_gyro_z_hold") == 0) {
+    if (!requireNumber(doc, "kp") || !requireNumber(doc, "maxCorrection")) {
+      sendMessage(clientId, "error", "invalid gyro Z hold values");
+      return;
+    }
+    const double kp = clampValue(doc["kp"].as<double>(), Config::GYRO_Z_HOLD_KP_MIN,
+                                 Config::GYRO_Z_HOLD_KP_MAX);
+    const int maxCorrection = clampValue(doc["maxCorrection"].as<int>(),
+                                         Config::GYRO_Z_HOLD_MAX_CORRECTION_MIN,
+                                         Config::GYRO_Z_HOLD_MAX_CORRECTION_MAX);
+    SharedState::requestGyroZHoldConfig(kp, maxCorrection);
+    sendMessage(clientId, "ack", "gyro Z hold updated");
   } else if (strcmp(type, "set_setpoint") == 0) {
     if (!requireNumber(doc, "setpoint")) {
       sendMessage(clientId, "error", "invalid setpoint");
@@ -261,6 +284,7 @@ const char PAGE[] PROGMEM = R"rawliteral(
     h1{font-size:20px;margin:0} h2{font-size:16px;margin:0 0 10px}
     .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
     .item{background:#111827;border-radius:8px;padding:8px}.label{color:#9ca3af;font-size:12px}.value{font-size:20px;font-weight:700}
+    .turn-right{color:#60a5fa}.turn-left{color:#fbbf24}.turn-still{color:#86efac}
     input,select{width:100%;box-sizing:border-box;margin:4px 0 8px;padding:8px;border-radius:6px;border:1px solid #4b5563;background:#0f172a;color:#e5e7eb}
     button{margin:4px 4px 4px 0;padding:9px 11px;border:0;border-radius:8px;background:#2563eb;color:white;font-weight:700;cursor:pointer}
     button.stop{background:#dc2626}.ok{background:#16a34a}.warn{background:#ca8a04}
@@ -273,6 +297,8 @@ const char PAGE[] PROGMEM = R"rawliteral(
   <section><h2>Estado</h2><div class="grid">
     <div class="item"><div class="label">Angulo</div><div class="value" id="angle">--</div></div>
     <div class="item"><div class="label">Gyro rate</div><div class="value" id="gyroRate">--</div></div>
+    <div class="item"><div class="label">Giro</div><div class="value" id="turnDirection">--</div></div>
+    <div class="item"><div class="label">Giro deg/s</div><div class="value" id="turnRate">--</div></div>
     <div class="item"><div class="label">PWM L/R</div><div class="value"><span id="leftPwm">--</span>/<span id="rightPwm">--</span></div></div>
     <div class="item"><div class="label">Motores</div><div class="value" id="motorsEnabled">--</div></div>
     <div class="item"><div class="label">IMU</div><div class="value" id="imuReady">--</div></div>
@@ -354,6 +380,20 @@ const char PAGE[] PROGMEM = R"rawliteral(
     <button class="ok" onclick="send({type:'enable_encoder_sync',enabled:true})">Habilitar sync</button>
     <button class="warn" onclick="send({type:'enable_encoder_sync',enabled:false})">Deshabilitar sync</button>
   </section>
+  <section><h2>Compensacion giro Z</h2>
+    <p>Usa solo el giroscopio Z para frenar rotacion no deseada del robot.</p>
+    <div class="grid">
+      <div class="item"><div class="label">Estado</div><div class="value" id="gyroZHoldEnabled">--</div></div>
+      <div class="item"><div class="label">Correccion PWM</div><div class="value" id="gyroZHoldCorrection">--</div></div>
+      <div class="item"><div class="label">Deadband deg/s</div><div class="value" id="gyroZHoldDeadband">--</div></div>
+      <div class="item"><div class="label">Giro deg/s</div><div class="value" id="gyroZHoldTurnRate">--</div></div>
+    </div>
+    <label>Kz gyro</label><input id="gyroZHoldKp" type="number" step="0.01">
+    <label>Correccion maxima PWM</label><input id="gyroZHoldMaxCorrection" type="number" step="1">
+    <button onclick="applyGyroZHold()">Actualizar gyro Z</button><br>
+    <button class="ok" onclick="send({type:'enable_gyro_z_hold',enabled:true})">Habilitar gyro Z</button>
+    <button class="warn" onclick="send({type:'enable_gyro_z_hold',enabled:false})">Deshabilitar gyro Z</button>
+  </section>
 </main>
 <script>
 let ws;
@@ -365,9 +405,16 @@ let integralLimitDirty = false;
 let iTermLimitDirty = false;
 let encoderSyncDirty = false;
 let encoderSyncTargetDirty = false;
+let gyroZHoldDirty = false;
 function num(id){return Number(document.getElementById(id).value)}
 function setText(id,value,digits=2){const el=document.getElementById(id); if(!el)return; el.textContent=typeof value==='number'?value.toFixed(digits):value;}
 function setInput(id,value,digits=3,dirty=false){const el=document.getElementById(id); if(!el || dirty || document.activeElement===el || typeof value!=='number')return; el.value=value.toFixed(digits);}
+function setTurnDirection(direction){
+  const el=document.getElementById('turnDirection');
+  if(!el)return;
+  el.textContent=direction || '--';
+  el.className='value '+(direction==='derecha'?'turn-right':(direction==='izquierda'?'turn-left':'turn-still'));
+}
 function send(obj){if(!ws || ws.readyState!==WebSocket.OPEN){alert('WebSocket no conectado');return;} ws.send(JSON.stringify(obj));}
 function applyPid(){send({type:'set_pid',kp:num('kp'),ki:num('ki'),kd:num('kd')}); pidDirty=false;}
 function applySetpoint(){send({type:'set_setpoint',setpoint:num('setpoint')}); setpointDirty=false;}
@@ -376,6 +423,7 @@ function applyMotorDeadzone(){send({type:'set_motor_deadzone',deadzonePwm:num('m
 function applyIntegralLimit(){send({type:'set_integral_limit',integralLimit:num('integralLimit')}); integralLimitDirty=false;}
 function applyITermLimit(){send({type:'set_i_term_limit',iTermLimit:num('iTermLimit')}); iTermLimitDirty=false;}
 function applyEncoderSync(){send({type:'set_encoder_sync',kp:num('encoderSyncKp'),deadband:num('encoderSyncDeadband'),maxCorrection:num('encoderSyncMaxCorrection')}); encoderSyncDirty=false;}
+function applyGyroZHold(){send({type:'set_gyro_z_hold',kp:num('gyroZHoldKp'),maxCorrection:num('gyroZHoldMaxCorrection')}); gyroZHoldDirty=false;}
 function applyEncoderSyncTarget(){
   const motor=document.getElementById('encoderSyncFastMotor').value;
   const magnitude=Math.abs(num('encoderSyncTargetMagnitude'));
@@ -397,6 +445,7 @@ function markDirty(){
   document.getElementById('integralLimit').addEventListener('input',()=>integralLimitDirty=true);
   document.getElementById('iTermLimit').addEventListener('input',()=>iTermLimitDirty=true);
   ['encoderSyncKp','encoderSyncDeadband','encoderSyncMaxCorrection'].forEach(id=>document.getElementById(id).addEventListener('input',()=>encoderSyncDirty=true));
+  ['gyroZHoldKp','gyroZHoldMaxCorrection'].forEach(id=>document.getElementById(id).addEventListener('input',()=>gyroZHoldDirty=true));
   document.getElementById('encoderSyncFastMotor').addEventListener('change',()=>encoderSyncTargetDirty=true);
   document.getElementById('encoderSyncTargetMagnitude').addEventListener('input',()=>encoderSyncTargetDirty=true);
 }
@@ -407,16 +456,18 @@ function connect(){
   ws.onmessage=(event)=>{
     const data=JSON.parse(event.data);
     if(data.type==='ack' || data.type==='error'){setText('status',data.message,0); console.log(data);return;}
-    setText('angle',data.selectedAngle); setText('gyroRate',data.gyroRate); setText('leftPwm',data.leftPwm,0); setText('rightPwm',data.rightPwm,0);
+    setText('angle',data.selectedAngle); setText('gyroRate',data.gyroRate); setTurnDirection(data.turnDirection); setText('turnRate',data.turnRate); setText('gyroZHoldTurnRate',data.turnRate); setText('leftPwm',data.leftPwm,0); setText('rightPwm',data.rightPwm,0);
     setText('motorsEnabled',data.motorsEnabled?'ON':'OFF',0); setText('imuReady',data.imuReady?'OK':'NO',0); setText('safetyStop',data.safetyStop?'STOP':'OK',0);
     setText('faultMessage',data.faultMessage,0); setText('pidError',data.pidError); setText('pidOutput',data.pidOutput); setText('pTerm',data.pTerm); setText('iTerm',data.iTerm); setText('dTerm',data.dTerm); setText('integral',data.integral,4);
     setText('integralLimitValue',data.integralLimit,4); setText('iTermLimitValue',data.iTermLimit); setText('integralEnabledValue',data.integralEnabled?'ON':'OFF',0);
     setText('outputBeforeLimit',data.outputBeforeLimit); setText('outputAfterLimit',data.outputAfterLimit);
     setText('leftEncoder',data.leftEncoder,0); setText('rightEncoder',data.rightEncoder,0); setText('leftSpeed',data.leftSpeed); setText('rightSpeed',data.rightSpeed); setText('speedDifference',data.speedDifference); setText('encoderSyncTargetDifference',data.encoderSyncTargetDifference); setText('encoderSyncError',data.encoderSyncError); setText('encoderSyncCorrection',data.encoderSyncCorrection,0); setText('encoderSyncEnabled',data.encoderSyncEnabled?'ON':'OFF',0);
+    setText('gyroZHoldEnabled',data.gyroZHoldEnabled?'ON':'OFF',0); setText('gyroZHoldCorrection',data.gyroZHoldCorrection,0); setText('gyroZHoldDeadband',data.gyroZHoldDeadband);
     setInput('kp',data.kp,3,pidDirty); setInput('ki',data.ki,3,pidDirty); setInput('kd',data.kd,3,pidDirty); setInput('setpoint',data.setpoint,3,setpointDirty); setInput('maxPwm',data.maxPwm,0,pwmDirty);
     setInput('motorDeadzonePwm',data.motorDeadzonePwm,0,deadzoneDirty);
     setInput('integralLimit',data.integralLimit,3,integralLimitDirty); setInput('iTermLimit',data.iTermLimit,1,iTermLimitDirty);
     setInput('encoderSyncKp',data.encoderSyncKp,4,encoderSyncDirty); setInput('encoderSyncDeadband',data.encoderSyncDeadband,1,encoderSyncDirty); setInput('encoderSyncMaxCorrection',data.encoderSyncMaxCorrection,0,encoderSyncDirty);
+    setInput('gyroZHoldKp',data.gyroZHoldKp,4,gyroZHoldDirty); setInput('gyroZHoldMaxCorrection',data.gyroZHoldMaxCorrection,0,gyroZHoldDirty);
     updateFastMotorInputs(data.encoderSyncTargetDifference);
   };
 }

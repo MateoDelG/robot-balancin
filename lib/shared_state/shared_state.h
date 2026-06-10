@@ -18,6 +18,8 @@ struct RobotState {
   float angleKalmanDeg = 0.0f;
   float selectedAngleDeg = 0.0f;
   float gyroRateDegPerSec = 0.0f;
+  float turnRateDegPerSec = 0.0f;
+  char turnDirection[12] = "quieto";
 
   long rawLeftEncoder = 0;
   long rawRightEncoder = 0;
@@ -34,6 +36,11 @@ struct RobotState {
   float encoderSyncDeadband = 0.0f;
   int encoderSyncMaxCorrection = 0;
   float encoderSyncTargetDifference = 0.0f;
+  bool gyroZHoldEnabled = false;
+  double gyroZHoldKp = 0.0;
+  float gyroZHoldDeadband = 0.0f;
+  int gyroZHoldMaxCorrection = 0;
+  int gyroZHoldCorrection = 0;
 
   int leftPwm = 0;
   int rightPwm = 0;
@@ -94,6 +101,8 @@ struct RobotCommand {
   bool updateEncoderSyncEnabled = false;
   bool updateEncoderSyncConfig = false;
   bool updateEncoderSyncTarget = false;
+  bool updateGyroZHoldEnabled = false;
+  bool updateGyroZHoldConfig = false;
   double pidKp = 0.0;
   double pidKi = 0.0;
   double pidKd = 0.0;
@@ -106,6 +115,9 @@ struct RobotCommand {
   float encoderSyncDeadband = 0.0f;
   int encoderSyncMaxCorrection = 0;
   float encoderSyncTargetDifference = 0.0f;
+  bool gyroZHoldEnabled = false;
+  double gyroZHoldKp = 0.0;
+  int gyroZHoldMaxCorrection = 0;
   int pidMaxPwm = 0;
   int motorDeadzonePwm = 0;
 };
@@ -143,5 +155,7 @@ void requestIntegralReset();
 void requestEncoderSyncEnabled(bool enabled);
 void requestEncoderSyncConfig(double kp, float deadband, int maxCorrection);
 void requestEncoderSyncTarget(float targetDifference);
+void requestGyroZHoldEnabled(bool enabled);
+void requestGyroZHoldConfig(double kp, int maxCorrection);
 
 }  // namespace SharedState
