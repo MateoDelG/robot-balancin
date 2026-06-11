@@ -102,11 +102,15 @@ constexpr float DRIVE_COMMAND_STEP = 0.08f;
 
 constexpr bool INVERT_DRIVE_FORWARD = true;
 constexpr bool INVERT_DRIVE_TURN = true;
+constexpr bool AUTO_RECOVERY_ENABLED = true;
+constexpr float AUTO_RECOVERY_ANGLE_WINDOW_DEG = 15.0f;
+constexpr unsigned long AUTO_RECOVERY_SETTLE_MS = 2000;
 
 constexpr double INITIAL_PID_KP = 15;
 constexpr double INITIAL_PID_KI = 300;
 constexpr double INITIAL_PID_KD = 0.9;
-constexpr double INITIAL_ANGLE_SETPOINT_DEG = 0.132;
+constexpr double INITIAL_ANGLE_SETPOINT_DEG = 5;
+
 constexpr int INITIAL_PID_MAX_PWM = 200;
 constexpr bool INVERT_PID_OUTPUT = true;
 constexpr int INITIAL_MOTOR_DEADZONE_PWM = 60;

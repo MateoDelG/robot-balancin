@@ -48,6 +48,7 @@ RobotCommand consumeCommand() {
     copy = robotCommand;
     robotCommand.enableMotors = false;
     robotCommand.disableMotors = false;
+    robotCommand.stopMotors = false;
     robotCommand.resetEncoders = false;
     robotCommand.calibrateGyro = false;
     robotCommand.calibrateVertical = false;

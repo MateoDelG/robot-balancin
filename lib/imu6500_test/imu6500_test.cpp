@@ -192,7 +192,7 @@ bool begin() {
   if (imuReady) {
     Serial.print(F("MPU6500 initialized at 0x"));
     Serial.println(imuAddress, HEX);
-    calibrateGyro();
+    Serial.println(F("Gyro calibration deferred to auto recovery"));
   } else {
     Serial.println(F("MPU6500 initialization failed at 0x68 and 0x69"));
   }

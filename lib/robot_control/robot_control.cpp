@@ -53,6 +53,42 @@ int balancePwm = 0;
 int finalLeftPwm = 0;
 int finalRightPwm = 0;
 
+enum class RecoveryState {
+  WaitingUpright,
+  Settling,
+  Calibrating,
+  Running,
+};
+
+RecoveryState recoveryState = RecoveryState::WaitingUpright;
+unsigned long recoveryStableStartMs = 0;
+unsigned long recoveryStableMs = 0;
+bool autoRecoveryCalibrating = false;
+
+const char *recoveryStateText() {
+  switch (recoveryState) {
+    case RecoveryState::WaitingUpright:
+      return "Waiting";
+    case RecoveryState::Settling:
+      return "Settling";
+    case RecoveryState::Calibrating:
+      return "Calibrating";
+    case RecoveryState::Running:
+      return "Running";
+    default:
+      return "Unknown";
+  }
+}
+
+void clearDriveCommand() {
+  targetDriveForward = 0.0f;
+  targetDriveTurn = 0.0f;
+  currentDriveForward = 0.0f;
+  currentDriveTurn = 0.0f;
+  driveAngleOffsetDeg = 0.0f;
+  driveTurnPwm = 0;
+}
+
 float turnRateFromGyroZ(const Imu6500Test::ImuSample &imu) {
   float turnRate = imu.correctedGz * RAD_TO_DEG;
   if (Config::INVERT_TURN_GYRO) {
@@ -153,6 +189,128 @@ void clearFault() {
   strlcpy(faultMessage, "OK", sizeof(faultMessage));
 }
 
+void enterRecoveryWaiting(const char *message) {
+  recoveryState = RecoveryState::WaitingUpright;
+  recoveryStableStartMs = 0;
+  recoveryStableMs = 0;
+  autoRecoveryCalibrating = false;
+  clearDriveCommand();
+  BalancePid::resetIntegral();
+  MotorsTest::disable();
+  motorsEnabled = false;
+  safetyStop = true;
+  safetyFault = true;
+  strlcpy(faultMessage, message, sizeof(faultMessage));
+}
+
+bool isUprightForRecovery(const Imu6500Test::ImuSample &imu) {
+  return imu.angleInitialized &&
+         fabsf(imu.selectedAngleDeg) <= Config::AUTO_RECOVERY_ANGLE_WINDOW_DEG;
+}
+
+void runAutoRecovery(const Imu6500Test::ImuSample &imu) {
+  if (!Config::AUTO_RECOVERY_ENABLED) {
+    return;
+  }
+
+  const unsigned long now = millis();
+
+  if (SharedState::isOtaUpdating()) {
+    enterRecoveryWaiting("OTA update in progress");
+    return;
+  }
+
+  if (!Imu6500Test::isReady()) {
+    enterRecoveryWaiting("IMU not ready");
+    return;
+  }
+
+  const bool upright = isUprightForRecovery(imu);
+  const bool safeAngle = imu.angleInitialized &&
+                         fabsf(imu.selectedAngleDeg) <= Config::MAX_SAFE_ANGLE_DEG;
+
+  if (recoveryState == RecoveryState::Running &&
+      (!imu.gyroCalibrated || !imu.angleInitialized)) {
+    enterRecoveryWaiting("IMU not calibrated");
+    return;
+  }
+
+  if (recoveryState == RecoveryState::Running && !safeAngle) {
+    enterRecoveryWaiting("Angle exceeds safe limit");
+    return;
+  }
+
+  switch (recoveryState) {
+    case RecoveryState::WaitingUpright:
+      MotorsTest::disable();
+      motorsEnabled = false;
+      safetyStop = true;
+      safetyFault = true;
+      clearDriveCommand();
+      if (upright) {
+        recoveryStableStartMs = now;
+        recoveryStableMs = 0;
+        recoveryState = RecoveryState::Settling;
+        strlcpy(faultMessage, "Auto recovery settling", sizeof(faultMessage));
+      } else {
+        strlcpy(faultMessage, "Waiting upright", sizeof(faultMessage));
+      }
+      break;
+
+    case RecoveryState::Settling:
+      MotorsTest::disable();
+      motorsEnabled = false;
+      safetyStop = true;
+      safetyFault = true;
+      clearDriveCommand();
+      if (!upright) {
+        recoveryState = RecoveryState::WaitingUpright;
+        recoveryStableStartMs = 0;
+        recoveryStableMs = 0;
+        strlcpy(faultMessage, "Waiting upright", sizeof(faultMessage));
+        break;
+      }
+      recoveryStableMs = now - recoveryStableStartMs;
+      if (recoveryStableMs >= Config::AUTO_RECOVERY_SETTLE_MS) {
+        recoveryState = RecoveryState::Calibrating;
+      }
+      break;
+
+    case RecoveryState::Calibrating:
+      autoRecoveryCalibrating = true;
+      MotorsTest::disable();
+      motorsEnabled = false;
+      safetyStop = true;
+      safetyFault = true;
+      clearDriveCommand();
+      BalancePid::resetIntegral();
+      strlcpy(faultMessage, "Auto calibrating", sizeof(faultMessage));
+
+      if (!Imu6500Test::calibrateGyro()) {
+        enterRecoveryWaiting("Gyro calibration failed");
+        break;
+      }
+
+      for (uint8_t sample = 0; sample < 5; ++sample) {
+        Imu6500Test::update();
+        vTaskDelay(pdMS_TO_TICKS(Config::CONTROL_TASK_PERIOD_MS));
+      }
+      Imu6500Test::calibrateVerticalAngle();
+      BalancePid::resetIntegral();
+      clearDriveCommand();
+      clearFault();
+      motorsEnabled = true;
+      autoRecoveryCalibrating = false;
+      recoveryStableMs = Config::AUTO_RECOVERY_SETTLE_MS;
+      recoveryState = RecoveryState::Running;
+      break;
+
+    case RecoveryState::Running:
+      clearFault();
+      break;
+  }
+}
+
 void updateEncoderDiagnostics() {
   const unsigned long now = millis();
   const long left = EncodersTest::leftCount();
@@ -234,6 +392,12 @@ void fillSharedState() {
   state.driveTurnPwm = driveTurnPwm;
   state.driveCommandActive = targetDriveForward != 0.0f || targetDriveTurn != 0.0f ||
                              currentDriveForward != 0.0f || currentDriveTurn != 0.0f;
+  state.autoRecoveryEnabled = Config::AUTO_RECOVERY_ENABLED;
+  state.autoRecoveryWaiting = recoveryState == RecoveryState::WaitingUpright ||
+                              recoveryState == RecoveryState::Settling;
+  state.autoRecoveryCalibrating = autoRecoveryCalibrating;
+  state.autoRecoveryStableMs = recoveryStableMs;
+  strlcpy(state.autoRecoveryState, recoveryStateText(), sizeof(state.autoRecoveryState));
   state.leftPwm = MotorsTest::getLeftPwm();
   state.rightPwm = MotorsTest::getRightPwm();
   state.balancePwm = balancePwm;
@@ -296,17 +460,11 @@ void handleCommand(const RobotCommand &command) {
   }
 
   if (command.stopMotors && !command.otaStart) {
-    setFault("Stop requested");
-    MotorsTest::disable();
+    enterRecoveryWaiting("Stop requested");
   }
 
   if (command.disableMotors) {
-    motorsEnabled = false;
-    MotorsTest::disable();
-    if (!safetyFault) {
-      safetyStop = true;
-      strlcpy(faultMessage, "Motors disabled", sizeof(faultMessage));
-    }
+    enterRecoveryWaiting("Motors disabled");
   }
 
   if (command.updatePidTunings) {
@@ -410,10 +568,11 @@ void handleCommand(const RobotCommand &command) {
 
   if (command.enableMotors) {
     if (SharedState::isOtaUpdating()) {
-      setFault("OTA update in progress");
+      enterRecoveryWaiting("OTA update in progress");
       return;
     }
     motorsEnabled = true;
+    recoveryState = RecoveryState::Running;
     clearFault();
   }
 
@@ -551,7 +710,7 @@ void begin() {
   Imu6500Test::begin();
   BalancePid::begin();
   BalancePid::setSetpoint(manualAngleSetpointDeg);
-  MotorsTest::disable();
+  enterRecoveryWaiting("Waiting upright");
   fillSharedState();
 }
 
@@ -562,7 +721,11 @@ void update() {
   Imu6500Test::update();
   updateEncoderDiagnostics();
   updateDriveCommandState();
-  const Imu6500Test::ImuSample imu = Imu6500Test::getSample();
+  Imu6500Test::ImuSample imu = Imu6500Test::getSample();
+  if (Config::AUTO_RECOVERY_ENABLED) {
+    runAutoRecovery(imu);
+    imu = Imu6500Test::getSample();
+  }
 
   if (!SharedState::isOtaUpdating()) {
     const unsigned long now = millis();
@@ -576,7 +739,9 @@ void update() {
                        safetyStop);
   }
 
-  updateSafety(imu);
+  if (!Config::AUTO_RECOVERY_ENABLED) {
+    updateSafety(imu);
+  }
   if (safetyStop || safetyFault || fabsf(imu.selectedAngleDeg) > Config::MAX_SAFE_ANGLE_DEG ||
       fabs(BalancePid::getError()) > Config::MAX_SAFE_ANGLE_DEG) {
     BalancePid::resetIntegral();

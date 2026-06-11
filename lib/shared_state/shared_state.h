@@ -51,6 +51,11 @@ struct RobotState {
   float driveAngleOffsetDeg = 0.0f;
   int driveTurnPwm = 0;
   bool driveCommandActive = false;
+  bool autoRecoveryEnabled = false;
+  bool autoRecoveryWaiting = false;
+  bool autoRecoveryCalibrating = false;
+  unsigned long autoRecoveryStableMs = 0;
+  char autoRecoveryState[20] = "Boot";
 
   int leftPwm = 0;
   int rightPwm = 0;
@@ -91,7 +96,7 @@ struct RobotState {
 struct RobotCommand {
   bool enableMotors = false;
   bool disableMotors = false;
-  bool stopMotors = true;
+  bool stopMotors = false;
   bool resetEncoders = false;
   bool calibrateGyro = false;
   bool calibrateVertical = false;

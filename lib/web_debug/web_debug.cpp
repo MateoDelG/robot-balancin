@@ -74,6 +74,11 @@ String stateAsJson() {
   doc["driveAngleOffset"] = state.driveAngleOffsetDeg;
   doc["driveTurnPwm"] = state.driveTurnPwm;
   doc["driveCommandActive"] = state.driveCommandActive;
+  doc["autoRecoveryEnabled"] = state.autoRecoveryEnabled;
+  doc["autoRecoveryWaiting"] = state.autoRecoveryWaiting;
+  doc["autoRecoveryCalibrating"] = state.autoRecoveryCalibrating;
+  doc["autoRecoveryStableMs"] = state.autoRecoveryStableMs;
+  doc["autoRecoveryState"] = state.autoRecoveryState;
   doc["leftPwm"] = state.leftPwm;
   doc["rightPwm"] = state.rightPwm;
   doc["basePwm"] = state.balancePwm;
@@ -338,6 +343,8 @@ const char PAGE[] PROGMEM = R"rawliteral(
     <div class="item"><div class="label">Motores</div><div class="value" id="motorsEnabled">--</div></div>
     <div class="item"><div class="label">IMU</div><div class="value" id="imuReady">--</div></div>
     <div class="item"><div class="label">Seguridad</div><div class="value" id="safetyStop">--</div></div>
+    <div class="item"><div class="label">Auto recovery</div><div class="value" id="autoRecoveryState">--</div></div>
+    <div class="item"><div class="label">Stable ms</div><div class="value" id="autoRecoveryStableMs">--</div></div>
   </div><p class="fault" id="faultMessage">--</p></section>
   <section><h2>PID</h2><div class="grid">
     <div class="item"><div class="label">Error</div><div class="value" id="pidError">--</div></div>
@@ -544,6 +551,7 @@ function connect(){
     if(data.type==='ack' || data.type==='error'){setText('status',data.message,0); console.log(data);return;}
     setText('angle',data.selectedAngle); setText('gyroRate',data.gyroRate); setTurnDirection(data.turnDirection); setText('turnRate',data.turnRate); setText('gyroZHoldTurnRate',data.turnRate); setText('leftPwm',data.leftPwm,0); setText('rightPwm',data.rightPwm,0);
     setText('motorsEnabled',data.motorsEnabled?'ON':'OFF',0); setText('imuReady',data.imuReady?'OK':'NO',0); setText('safetyStop',data.safetyStop?'STOP':'OK',0);
+    setText('autoRecoveryState',data.autoRecoveryState,0); setText('autoRecoveryStableMs',data.autoRecoveryStableMs,0);
     setText('faultMessage',data.faultMessage,0); setText('pidError',data.pidError); setText('pidOutput',data.pidOutput); setText('pTerm',data.pTerm); setText('iTerm',data.iTerm); setText('dTerm',data.dTerm); setText('integral',data.integral,4);
     setText('integralLimitValue',data.integralLimit,4); setText('iTermLimitValue',data.iTermLimit); setText('integralEnabledValue',data.integralEnabled?'ON':'OFF',0);
     setText('outputBeforeLimit',data.outputBeforeLimit); setText('outputAfterLimit',data.outputAfterLimit);
