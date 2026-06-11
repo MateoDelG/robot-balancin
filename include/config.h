@@ -89,8 +89,19 @@ constexpr double SPEED_HOLD_KP_MIN = 0.0;
 constexpr double SPEED_HOLD_KP_MAX = 0.05;
 constexpr float SPEED_HOLD_DEADBAND_COUNTS_PER_SEC = 8.0f;
 constexpr double INITIAL_SPEED_HOLD_MAX_ANGLE_DEG = 3.0;
+
 constexpr double SPEED_HOLD_MAX_ANGLE_MIN_DEG = 0.0;
 constexpr double SPEED_HOLD_MAX_ANGLE_MAX_DEG = 6.0;
+
+constexpr float INITIAL_MAX_DRIVE_ANGLE_DEG = 2.0f;
+
+constexpr int INITIAL_MAX_DRIVE_TURN_PWM = 30;
+constexpr unsigned long DRIVE_COMMAND_TIMEOUT_MS = 300;
+
+constexpr float DRIVE_COMMAND_STEP = 0.08f;
+
+constexpr bool INVERT_DRIVE_FORWARD = true;
+constexpr bool INVERT_DRIVE_TURN = true;
 
 constexpr double INITIAL_PID_KP = 15;
 constexpr double INITIAL_PID_KI = 300;

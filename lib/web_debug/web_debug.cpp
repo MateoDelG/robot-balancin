@@ -69,6 +69,11 @@ String stateAsJson() {
   doc["speedHoldDeadband"] = state.speedHoldDeadband;
   doc["speedHoldMaxAngle"] = state.speedHoldMaxAngleDeg;
   doc["speedHoldAngleCorrection"] = state.speedHoldAngleCorrectionDeg;
+  doc["driveForward"] = state.driveForward;
+  doc["driveTurn"] = state.driveTurn;
+  doc["driveAngleOffset"] = state.driveAngleOffsetDeg;
+  doc["driveTurnPwm"] = state.driveTurnPwm;
+  doc["driveCommandActive"] = state.driveCommandActive;
   doc["leftPwm"] = state.leftPwm;
   doc["rightPwm"] = state.rightPwm;
   doc["basePwm"] = state.balancePwm;
@@ -276,6 +281,14 @@ void handleMessage(uint8_t clientId, const char *payload) {
                                        Config::SPEED_HOLD_MAX_ANGLE_MAX_DEG);
     SharedState::requestSpeedHoldConfig(kp, maxAngle);
     sendMessage(clientId, "ack", "speed hold updated");
+  } else if (strcmp(type, "drive") == 0) {
+    if (!requireNumber(doc, "forward") || !requireNumber(doc, "turn")) {
+      sendMessage(clientId, "error", "invalid drive command");
+      return;
+    }
+    const float forward = clampValue(doc["forward"].as<float>(), -1.0f, 1.0f);
+    const float turn = clampValue(doc["turn"].as<float>(), -1.0f, 1.0f);
+    SharedState::requestDriveCommand(forward, turn);
   } else if (strcmp(type, "set_setpoint") == 0) {
     if (!requireNumber(doc, "setpoint")) {
       sendMessage(clientId, "error", "invalid setpoint");
@@ -306,6 +319,7 @@ const char PAGE[] PROGMEM = R"rawliteral(
     .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
     .item{background:#111827;border-radius:8px;padding:8px}.label{color:#9ca3af;font-size:12px}.value{font-size:20px;font-weight:700}
     .turn-right{color:#60a5fa}.turn-left{color:#fbbf24}.turn-still{color:#86efac}
+    .drive-pad{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;align-items:center}.drive-pad button{width:100%;min-height:46px;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:none}.drive-stop{grid-column:2;background:#dc2626}.drive-forward{grid-column:2}.drive-left{grid-column:1}.drive-right{grid-column:3}.drive-back{grid-column:2}
     input,select{width:100%;box-sizing:border-box;margin:4px 0 8px;padding:8px;border-radius:6px;border:1px solid #4b5563;background:#0f172a;color:#e5e7eb}
     button{margin:4px 4px 4px 0;padding:9px 11px;border:0;border-radius:8px;background:#2563eb;color:white;font-weight:700;cursor:pointer}
     button.stop{background:#dc2626}.ok{background:#16a34a}.warn{background:#ca8a04}
@@ -372,6 +386,22 @@ const char PAGE[] PROGMEM = R"rawliteral(
     <button onclick="send({type:'test_left_motor'})">Test motor izquierdo</button>
     <button onclick="send({type:'test_right_motor'})">Test motor derecho</button>
     <button onclick="send({type:'test_both_motors'})">Test ambos</button>
+  </section>
+  <section><h2>Control movimiento</h2>
+    <p>Los botones solo funcionan mientras estan presionados.</p>
+    <div class="drive-pad">
+      <button id="driveForward" class="drive-forward">Adelante</button>
+      <button id="driveLeft" class="drive-left">Izquierda</button>
+      <button id="driveStop" class="drive-stop">STOP movimiento</button>
+      <button id="driveRight" class="drive-right">Derecha</button>
+      <button id="driveBack" class="drive-back">Atras</button>
+    </div>
+    <div class="grid">
+      <div class="item"><div class="label">Drive activo</div><div class="value" id="driveCommandActive">--</div></div>
+      <div class="item"><div class="label">Forward</div><div class="value" id="driveForwardValue">--</div></div>
+      <div class="item"><div class="label">Turn</div><div class="value" id="driveTurnValue">--</div></div>
+      <div class="item"><div class="label">Turn PWM</div><div class="value" id="driveTurnPwm">--</div></div>
+    </div>
   </section>
   <section><h2>Encoders diagnostico</h2><div class="grid">
     <div class="item"><div class="label">Left count</div><div class="value" id="leftEncoder">--</div></div>
@@ -442,6 +472,9 @@ let encoderSyncDirty = false;
 let encoderSyncTargetDirty = false;
 let gyroZHoldDirty = false;
 let speedHoldDirty = false;
+let driveTimer = null;
+let driveForwardCommand = 0;
+let driveTurnCommand = 0;
 function num(id){return Number(document.getElementById(id).value)}
 function setText(id,value,digits=2){const el=document.getElementById(id); if(!el)return; el.textContent=typeof value==='number'?value.toFixed(digits):value;}
 function setInput(id,value,digits=3,dirty=false){const el=document.getElementById(id); if(!el || dirty || document.activeElement===el || typeof value!=='number')return; el.value=value.toFixed(digits);}
@@ -452,6 +485,16 @@ function setTurnDirection(direction){
   el.className='value '+(direction==='derecha'?'turn-right':(direction==='izquierda'?'turn-left':'turn-still'));
 }
 function send(obj){if(!ws || ws.readyState!==WebSocket.OPEN){alert('WebSocket no conectado');return;} ws.send(JSON.stringify(obj));}
+function sendDrive(forward,turn){if(ws && ws.readyState===WebSocket.OPEN){ws.send(JSON.stringify({type:'drive',forward,turn}));}}
+function stopDrive(){if(driveTimer){clearInterval(driveTimer);driveTimer=null;} driveForwardCommand=0; driveTurnCommand=0; sendDrive(0,0);}
+function startDrive(forward,turn){stopDrive(); driveForwardCommand=forward; driveTurnCommand=turn; sendDrive(forward,turn); driveTimer=setInterval(()=>sendDrive(driveForwardCommand,driveTurnCommand),100);}
+function bindDriveButton(id,forward,turn){
+  const button=document.getElementById(id); if(!button)return;
+  button.addEventListener('pointerdown',(event)=>{event.preventDefault(); button.setPointerCapture(event.pointerId); startDrive(forward,turn);});
+  button.addEventListener('pointerup',stopDrive);
+  button.addEventListener('pointercancel',stopDrive);
+  button.addEventListener('pointerleave',stopDrive);
+}
 function applyPid(){send({type:'set_pid',kp:num('kp'),ki:num('ki'),kd:num('kd')}); pidDirty=false;}
 function applySetpoint(){send({type:'set_setpoint',setpoint:num('setpoint')}); setpointDirty=false;}
 function applyPwmLimit(){send({type:'set_pwm_limit',maxPwm:num('maxPwm')}); pwmDirty=false;}
@@ -484,6 +527,11 @@ function markDirty(){
   ['encoderSyncKp','encoderSyncDeadband','encoderSyncMaxCorrection'].forEach(id=>document.getElementById(id).addEventListener('input',()=>encoderSyncDirty=true));
   ['gyroZHoldKp','gyroZHoldMaxCorrection'].forEach(id=>document.getElementById(id).addEventListener('input',()=>gyroZHoldDirty=true));
   ['speedHoldKp','speedHoldMaxAngle'].forEach(id=>document.getElementById(id).addEventListener('input',()=>speedHoldDirty=true));
+  bindDriveButton('driveForward',1,0);
+  bindDriveButton('driveBack',-1,0);
+  bindDriveButton('driveLeft',0,-1);
+  bindDriveButton('driveRight',0,1);
+  bindDriveButton('driveStop',0,0);
   document.getElementById('encoderSyncFastMotor').addEventListener('change',()=>encoderSyncTargetDirty=true);
   document.getElementById('encoderSyncTargetMagnitude').addEventListener('input',()=>encoderSyncTargetDirty=true);
 }
@@ -502,6 +550,7 @@ function connect(){
     setText('leftEncoder',data.leftEncoder,0); setText('rightEncoder',data.rightEncoder,0); setText('leftSpeed',data.leftSpeed); setText('rightSpeed',data.rightSpeed); setText('speedDifference',data.speedDifference); setText('encoderSyncTargetDifference',data.encoderSyncTargetDifference); setText('encoderSyncError',data.encoderSyncError); setText('encoderSyncCorrection',data.encoderSyncCorrection,0); setText('encoderSyncEnabled',data.encoderSyncEnabled?'ON':'OFF',0);
     setText('gyroZHoldEnabled',data.gyroZHoldEnabled?'ON':'OFF',0); setText('gyroZHoldCorrection',data.gyroZHoldCorrection,0); setText('gyroZHoldDeadband',data.gyroZHoldDeadband);
     setText('speedHoldEnabled',data.speedHoldEnabled?'ON':'OFF',0); setText('speedHoldAngleCorrection',data.speedHoldAngleCorrection); setText('speedHoldAverage',data.speedAverage); setText('speedHoldDeadband',data.speedHoldDeadband);
+    setText('driveCommandActive',data.driveCommandActive?'ON':'OFF',0); setText('driveForwardValue',data.driveForward); setText('driveTurnValue',data.driveTurn); setText('driveTurnPwm',data.driveTurnPwm,0);
     setInput('kp',data.kp,3,pidDirty); setInput('ki',data.ki,3,pidDirty); setInput('kd',data.kd,3,pidDirty); setInput('setpoint',data.setpoint,3,setpointDirty); setInput('maxPwm',data.maxPwm,0,pwmDirty);
     setInput('motorDeadzonePwm',data.motorDeadzonePwm,0,deadzoneDirty);
     setInput('integralLimit',data.integralLimit,3,integralLimitDirty); setInput('iTermLimit',data.iTermLimit,1,iTermLimitDirty);
@@ -511,6 +560,7 @@ function connect(){
     updateFastMotorInputs(data.encoderSyncTargetDifference);
   };
 }
+window.addEventListener('blur',stopDrive);
 markDirty();
 connect();
 </script>

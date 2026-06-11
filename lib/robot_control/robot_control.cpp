@@ -42,6 +42,13 @@ double speedHoldKp = Config::INITIAL_SPEED_HOLD_KP;
 double speedHoldMaxAngleDeg = Config::INITIAL_SPEED_HOLD_MAX_ANGLE_DEG;
 double manualAngleSetpointDeg = Config::INITIAL_ANGLE_SETPOINT_DEG;
 double speedHoldAngleCorrectionDeg = 0.0;
+float targetDriveForward = 0.0f;
+float targetDriveTurn = 0.0f;
+float currentDriveForward = 0.0f;
+float currentDriveTurn = 0.0f;
+float driveAngleOffsetDeg = 0.0f;
+int driveTurnPwm = 0;
+unsigned long lastDriveCommandMs = 0;
 int balancePwm = 0;
 int finalLeftPwm = 0;
 int finalRightPwm = 0;
@@ -73,6 +80,42 @@ int gyroZHoldCorrectionFromRate(float turnRateDegPerSec) {
   return constrain(correction, -gyroZHoldMaxCorrection, gyroZHoldMaxCorrection);
 }
 
+float approachValue(float current, float target, float step) {
+  if (current < target) {
+    return min(current + step, target);
+  }
+  if (current > target) {
+    return max(current - step, target);
+  }
+  return current;
+}
+
+void updateDriveCommandState() {
+  const unsigned long now = millis();
+  if (!motorsEnabled || safetyStop || safetyFault ||
+      now - lastDriveCommandMs > Config::DRIVE_COMMAND_TIMEOUT_MS) {
+    targetDriveForward = 0.0f;
+    targetDriveTurn = 0.0f;
+  }
+
+  currentDriveForward = approachValue(currentDriveForward, targetDriveForward,
+                                      Config::DRIVE_COMMAND_STEP);
+  currentDriveTurn = approachValue(currentDriveTurn, targetDriveTurn,
+                                   Config::DRIVE_COMMAND_STEP);
+
+  float driveForward = currentDriveForward;
+  float driveTurn = currentDriveTurn;
+  if (Config::INVERT_DRIVE_FORWARD) {
+    driveForward = -driveForward;
+  }
+  if (Config::INVERT_DRIVE_TURN) {
+    driveTurn = -driveTurn;
+  }
+
+  driveAngleOffsetDeg = driveForward * Config::INITIAL_MAX_DRIVE_ANGLE_DEG;
+  driveTurnPwm = static_cast<int>(lround(driveTurn * Config::INITIAL_MAX_DRIVE_TURN_PWM));
+}
+
 void updateBalanceSetpointFromSpeed() {
   speedHoldAngleCorrectionDeg = 0.0;
   if (speedHoldEnabled && motorsEnabled && !safetyStop && !safetyFault) {
@@ -90,7 +133,8 @@ void updateBalanceSetpointFromSpeed() {
                                             speedHoldMaxAngleDeg);
   }
 
-  const double setpoint = constrain(manualAngleSetpointDeg + speedHoldAngleCorrectionDeg,
+  const double setpoint = constrain(manualAngleSetpointDeg + speedHoldAngleCorrectionDeg +
+                                        static_cast<double>(driveAngleOffsetDeg),
                                     Config::SETPOINT_MIN_DEG,
                                     Config::SETPOINT_MAX_DEG);
   BalancePid::setSetpoint(setpoint);
@@ -184,6 +228,12 @@ void fillSharedState() {
   state.speedHoldDeadband = Config::SPEED_HOLD_DEADBAND_COUNTS_PER_SEC;
   state.speedHoldMaxAngleDeg = speedHoldMaxAngleDeg;
   state.speedHoldAngleCorrectionDeg = speedHoldAngleCorrectionDeg;
+  state.driveForward = currentDriveForward;
+  state.driveTurn = currentDriveTurn;
+  state.driveAngleOffsetDeg = driveAngleOffsetDeg;
+  state.driveTurnPwm = driveTurnPwm;
+  state.driveCommandActive = targetDriveForward != 0.0f || targetDriveTurn != 0.0f ||
+                             currentDriveForward != 0.0f || currentDriveTurn != 0.0f;
   state.leftPwm = MotorsTest::getLeftPwm();
   state.rightPwm = MotorsTest::getRightPwm();
   state.balancePwm = balancePwm;
@@ -337,6 +387,12 @@ void handleCommand(const RobotCommand &command) {
                                      Config::SPEED_HOLD_MAX_ANGLE_MAX_DEG);
   }
 
+  if (command.updateDriveCommand) {
+    targetDriveForward = constrain(command.driveForward, -1.0f, 1.0f);
+    targetDriveTurn = constrain(command.driveTurn, -1.0f, 1.0f);
+    lastDriveCommandMs = millis();
+  }
+
   if (command.resetEncoders) {
     EncodersTest::reset();
     Serial.println(F("Encoder counts reset by command"));
@@ -406,8 +462,8 @@ void applyPidToMotors() {
   }
   const Imu6500Test::ImuSample imu = Imu6500Test::getSample();
   gyroZHoldCorrection = gyroZHoldCorrectionFromRate(turnRateFromGyroZ(imu));
-  finalLeftPwm = balancePwm - encoderSyncCorrection - gyroZHoldCorrection;
-  finalRightPwm = balancePwm + encoderSyncCorrection + gyroZHoldCorrection;
+  finalLeftPwm = balancePwm - encoderSyncCorrection - gyroZHoldCorrection - driveTurnPwm;
+  finalRightPwm = balancePwm + encoderSyncCorrection + gyroZHoldCorrection + driveTurnPwm;
 
   if (motorsEnabled && !safetyStop && !safetyFault) {
     MotorsTest::setLeftPwm(finalLeftPwm);
@@ -456,6 +512,12 @@ void printPidIfDue() {
   Serial.print(speedDifference, 2);
   Serial.print(F(" speedHoldAngle="));
   Serial.print(speedHoldAngleCorrectionDeg, 3);
+  Serial.print(F(" driveF="));
+  Serial.print(currentDriveForward, 2);
+  Serial.print(F(" driveT="));
+  Serial.print(currentDriveTurn, 2);
+  Serial.print(F(" driveTurnPwm="));
+  Serial.print(driveTurnPwm);
   Serial.print(F(" syncTarget="));
   Serial.print(encoderSyncTargetDifference, 2);
   Serial.print(F(" syncError="));
@@ -499,6 +561,7 @@ void update() {
 
   Imu6500Test::update();
   updateEncoderDiagnostics();
+  updateDriveCommandState();
   const Imu6500Test::ImuSample imu = Imu6500Test::getSample();
 
   if (!SharedState::isOtaUpdating()) {

@@ -46,6 +46,11 @@ struct RobotState {
   float speedHoldDeadband = 0.0f;
   double speedHoldMaxAngleDeg = 0.0;
   double speedHoldAngleCorrectionDeg = 0.0;
+  float driveForward = 0.0f;
+  float driveTurn = 0.0f;
+  float driveAngleOffsetDeg = 0.0f;
+  int driveTurnPwm = 0;
+  bool driveCommandActive = false;
 
   int leftPwm = 0;
   int rightPwm = 0;
@@ -110,6 +115,7 @@ struct RobotCommand {
   bool updateGyroZHoldConfig = false;
   bool updateSpeedHoldEnabled = false;
   bool updateSpeedHoldConfig = false;
+  bool updateDriveCommand = false;
   double pidKp = 0.0;
   double pidKi = 0.0;
   double pidKd = 0.0;
@@ -128,6 +134,8 @@ struct RobotCommand {
   bool speedHoldEnabled = false;
   double speedHoldKp = 0.0;
   double speedHoldMaxAngleDeg = 0.0;
+  float driveForward = 0.0f;
+  float driveTurn = 0.0f;
   int pidMaxPwm = 0;
   int motorDeadzonePwm = 0;
 };
@@ -169,5 +177,6 @@ void requestGyroZHoldEnabled(bool enabled);
 void requestGyroZHoldConfig(double kp, int maxCorrection);
 void requestSpeedHoldEnabled(bool enabled);
 void requestSpeedHoldConfig(double kp, double maxAngleDeg);
+void requestDriveCommand(float forward, float turn);
 
 }  // namespace SharedState

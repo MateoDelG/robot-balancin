@@ -71,6 +71,7 @@ RobotCommand consumeCommand() {
     robotCommand.updateGyroZHoldConfig = false;
     robotCommand.updateSpeedHoldEnabled = false;
     robotCommand.updateSpeedHoldConfig = false;
+    robotCommand.updateDriveCommand = false;
     xSemaphoreGive(stateMutex);
   }
   return copy;
@@ -92,6 +93,9 @@ void requestDisableMotors() {
     robotCommand.testLeftMotor = false;
     robotCommand.testRightMotor = false;
     robotCommand.testBothMotors = false;
+    robotCommand.driveForward = 0.0f;
+    robotCommand.driveTurn = 0.0f;
+    robotCommand.updateDriveCommand = true;
   });
 }
 
@@ -103,6 +107,9 @@ void requestStop() {
     robotCommand.testLeftMotor = false;
     robotCommand.testRightMotor = false;
     robotCommand.testBothMotors = false;
+    robotCommand.driveForward = 0.0f;
+    robotCommand.driveTurn = 0.0f;
+    robotCommand.updateDriveCommand = true;
   });
 }
 
@@ -289,6 +296,15 @@ void requestSpeedHoldConfig(double kp, double maxAngleDeg) {
     robotCommand.speedHoldKp = kp;
     robotCommand.speedHoldMaxAngleDeg = maxAngleDeg;
     robotCommand.updateSpeedHoldConfig = true;
+    xSemaphoreGive(stateMutex);
+  }
+}
+
+void requestDriveCommand(float forward, float turn) {
+  if (stateMutex != nullptr && xSemaphoreTake(stateMutex, portMAX_DELAY) == pdTRUE) {
+    robotCommand.driveForward = constrain(forward, -1.0f, 1.0f);
+    robotCommand.driveTurn = constrain(turn, -1.0f, 1.0f);
+    robotCommand.updateDriveCommand = true;
     xSemaphoreGive(stateMutex);
   }
 }
