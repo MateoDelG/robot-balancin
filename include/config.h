@@ -105,6 +105,18 @@ constexpr bool INVERT_DRIVE_TURN = true;
 constexpr bool AUTO_RECOVERY_ENABLED = true;
 constexpr float AUTO_RECOVERY_ANGLE_WINDOW_DEG = 15.0f;
 constexpr unsigned long AUTO_RECOVERY_SETTLE_MS = 2000;
+constexpr bool INITIAL_AUTO_TRIM_ENABLED = false;
+
+constexpr double AUTO_TRIM_MAX_OFFSET_DEG = 2.0;
+constexpr double AUTO_TRIM_TEST_OFFSET_DEG = 0.05;
+constexpr double AUTO_TRIM_APPLY_STEP_DEG = 0.01;
+constexpr unsigned long AUTO_TRIM_STABLE_BEFORE_START_MS = 500;
+constexpr unsigned long AUTO_TRIM_TEST_WINDOW_MS = 500;
+constexpr float AUTO_TRIM_MAX_SPEED_COUNTS_PER_SEC = 2000.0f;
+constexpr int AUTO_TRIM_MAX_PWM_FOR_TEST = 160;
+constexpr double AUTO_TRIM_MIN_SCORE_DELTA = 0.5;
+constexpr double AUTO_TRIM_TARGET_SCORE = 8.0;
+constexpr uint8_t AUTO_TRIM_MAX_NO_IMPROVEMENT_CYCLES = 50;
 
 constexpr double INITIAL_PID_KP = 15;
 constexpr double INITIAL_PID_KI = 300;
@@ -113,7 +125,7 @@ constexpr double INITIAL_ANGLE_SETPOINT_DEG = 5;
 
 constexpr int INITIAL_PID_MAX_PWM = 200;
 constexpr bool INVERT_PID_OUTPUT = true;
-constexpr int INITIAL_MOTOR_DEADZONE_PWM = 60;
+constexpr int INITIAL_MOTOR_DEADZONE_PWM = 58;
 constexpr int MOTOR_DEADZONE_PWM_MIN = 0;
 constexpr int MOTOR_DEADZONE_PWM_MAX = 200;
 constexpr double INITIAL_INTEGRAL_LIMIT = 0.25;

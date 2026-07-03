@@ -73,6 +73,8 @@ RobotCommand consumeCommand() {
     robotCommand.updateSpeedHoldEnabled = false;
     robotCommand.updateSpeedHoldConfig = false;
     robotCommand.updateDriveCommand = false;
+    robotCommand.updateAutoTrimEnabled = false;
+    robotCommand.resetAutoTrim = false;
     xSemaphoreGive(stateMutex);
   }
   return copy;
@@ -308,6 +310,18 @@ void requestDriveCommand(float forward, float turn) {
     robotCommand.updateDriveCommand = true;
     xSemaphoreGive(stateMutex);
   }
+}
+
+void requestAutoTrimEnabled(bool enabled) {
+  if (stateMutex != nullptr && xSemaphoreTake(stateMutex, portMAX_DELAY) == pdTRUE) {
+    robotCommand.autoTrimEnabled = enabled;
+    robotCommand.updateAutoTrimEnabled = true;
+    xSemaphoreGive(stateMutex);
+  }
+}
+
+void requestAutoTrimReset() {
+  withLock([]() { robotCommand.resetAutoTrim = true; });
 }
 
 }  // namespace SharedState

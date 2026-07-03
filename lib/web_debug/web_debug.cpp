@@ -79,6 +79,17 @@ String stateAsJson() {
   doc["autoRecoveryCalibrating"] = state.autoRecoveryCalibrating;
   doc["autoRecoveryStableMs"] = state.autoRecoveryStableMs;
   doc["autoRecoveryState"] = state.autoRecoveryState;
+  doc["autoTrimEnabled"] = state.autoTrimEnabled;
+  doc["autoTrimDone"] = state.autoTrimDone;
+  doc["autoTrimOffset"] = state.autoTrimOffsetDeg;
+  doc["autoTrimScore"] = state.autoTrimScore;
+  doc["autoTrimBestScore"] = state.autoTrimBestScore;
+  doc["autoTrimNoImprovementCycles"] = state.autoTrimNoImprovementCycles;
+  doc["autoTrimStableElapsedMs"] = state.autoTrimStableElapsedMs;
+  doc["autoTrimPhase"] = state.autoTrimPhase;
+  doc["autoTrimDirection"] = state.autoTrimDirection;
+  doc["autoTrimBlockReason"] = state.autoTrimBlockReason;
+  doc["autoTrimStopReason"] = state.autoTrimStopReason;
   doc["leftPwm"] = state.leftPwm;
   doc["rightPwm"] = state.rightPwm;
   doc["basePwm"] = state.balancePwm;
@@ -294,6 +305,13 @@ void handleMessage(uint8_t clientId, const char *payload) {
     const float forward = clampValue(doc["forward"].as<float>(), -1.0f, 1.0f);
     const float turn = clampValue(doc["turn"].as<float>(), -1.0f, 1.0f);
     SharedState::requestDriveCommand(forward, turn);
+  } else if (strcmp(type, "enable_auto_trim") == 0) {
+    const bool enabled = doc["enabled"] | false;
+    SharedState::requestAutoTrimEnabled(enabled);
+    sendMessage(clientId, "ack", enabled ? "auto trim enabled" : "auto trim disabled");
+  } else if (strcmp(type, "reset_auto_trim") == 0) {
+    SharedState::requestAutoTrimReset();
+    sendMessage(clientId, "ack", "auto trim reset requested");
   } else if (strcmp(type, "set_setpoint") == 0) {
     if (!requireNumber(doc, "setpoint")) {
       sendMessage(clientId, "error", "invalid setpoint");
@@ -466,6 +484,26 @@ const char PAGE[] PROGMEM = R"rawliteral(
     <button class="ok" onclick="send({type:'enable_speed_hold',enabled:true})">Habilitar velocidad</button>
     <button class="warn" onclick="send({type:'enable_speed_hold',enabled:false})">Deshabilitar velocidad</button>
   </section>
+  <section><h2>Auto Trim SP</h2>
+    <p>Ajusta lentamente el setpoint base buscando menor velocidad y menor esfuerzo PID.</p>
+    <div class="grid">
+      <div class="item"><div class="label">Estado</div><div class="value" id="autoTrimEnabled">--</div></div>
+      <div class="item"><div class="label">Done</div><div class="value" id="autoTrimDone">--</div></div>
+      <div class="item"><div class="label">Offset</div><div class="value" id="autoTrimOffset">--</div></div>
+      <div class="item"><div class="label">Score</div><div class="value" id="autoTrimScore">--</div></div>
+      <div class="item"><div class="label">Best score</div><div class="value" id="autoTrimBestScore">--</div></div>
+      <div class="item"><div class="label">Sin mejora</div><div class="value" id="autoTrimNoImprovementCycles">--</div></div>
+      <div class="item"><div class="label">Fase</div><div class="value" id="autoTrimPhase">--</div></div>
+      <div class="item"><div class="label">Direccion</div><div class="value" id="autoTrimDirection">--</div></div>
+      <div class="item"><div class="label">SP final</div><div class="value" id="autoTrimFinalSetpoint">--</div></div>
+      <div class="item"><div class="label">Stable ms</div><div class="value" id="autoTrimStableElapsedMs">--</div></div>
+      <div class="item"><div class="label">Bloqueo</div><div class="value" id="autoTrimBlockReason">--</div></div>
+      <div class="item"><div class="label">Stop reason</div><div class="value" id="autoTrimStopReason">--</div></div>
+    </div>
+    <button class="ok" onclick="send({type:'enable_auto_trim',enabled:true})">Habilitar auto trim</button>
+    <button class="warn" onclick="send({type:'enable_auto_trim',enabled:false})">Deshabilitar auto trim</button>
+    <button onclick="send({type:'reset_auto_trim'})">Reset auto trim</button>
+  </section>
 </main>
 <script>
 let ws;
@@ -552,6 +590,7 @@ function connect(){
     setText('angle',data.selectedAngle); setText('gyroRate',data.gyroRate); setTurnDirection(data.turnDirection); setText('turnRate',data.turnRate); setText('gyroZHoldTurnRate',data.turnRate); setText('leftPwm',data.leftPwm,0); setText('rightPwm',data.rightPwm,0);
     setText('motorsEnabled',data.motorsEnabled?'ON':'OFF',0); setText('imuReady',data.imuReady?'OK':'NO',0); setText('safetyStop',data.safetyStop?'STOP':'OK',0);
     setText('autoRecoveryState',data.autoRecoveryState,0); setText('autoRecoveryStableMs',data.autoRecoveryStableMs,0);
+    setText('autoTrimEnabled',data.autoTrimEnabled?'ON':'OFF',0); setText('autoTrimDone',data.autoTrimDone?'YES':'NO',0); setText('autoTrimOffset',data.autoTrimOffset,3); setText('autoTrimScore',data.autoTrimScore,2); setText('autoTrimBestScore',data.autoTrimBestScore,2); setText('autoTrimNoImprovementCycles',data.autoTrimNoImprovementCycles,0); setText('autoTrimPhase',data.autoTrimPhase,0); setText('autoTrimDirection',data.autoTrimDirection,0); setText('autoTrimFinalSetpoint',data.setpoint,3); setText('autoTrimStableElapsedMs',data.autoTrimStableElapsedMs,0); setText('autoTrimBlockReason',data.autoTrimBlockReason,0); setText('autoTrimStopReason',data.autoTrimStopReason || '--',0);
     setText('faultMessage',data.faultMessage,0); setText('pidError',data.pidError); setText('pidOutput',data.pidOutput); setText('pTerm',data.pTerm); setText('iTerm',data.iTerm); setText('dTerm',data.dTerm); setText('integral',data.integral,4);
     setText('integralLimitValue',data.integralLimit,4); setText('iTermLimitValue',data.iTermLimit); setText('integralEnabledValue',data.integralEnabled?'ON':'OFF',0);
     setText('outputBeforeLimit',data.outputBeforeLimit); setText('outputAfterLimit',data.outputAfterLimit);

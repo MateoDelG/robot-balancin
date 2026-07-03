@@ -49,6 +49,20 @@ float currentDriveTurn = 0.0f;
 float driveAngleOffsetDeg = 0.0f;
 int driveTurnPwm = 0;
 unsigned long lastDriveCommandMs = 0;
+bool autoTrimEnabled = Config::INITIAL_AUTO_TRIM_ENABLED;
+double autoTrimOffsetDeg = 0.0;
+double autoTrimScore = 0.0;
+double autoTrimPositiveScore = 0.0;
+double autoTrimNegativeScore = 0.0;
+double autoTrimBestScore = 999999.0;
+double autoTrimScoreSum = 0.0;
+uint16_t autoTrimScoreSamples = 0;
+uint8_t autoTrimNoImprovementCycles = 0;
+unsigned long autoTrimPhaseStartMs = 0;
+unsigned long autoTrimStableStartMs = 0;
+unsigned long autoTrimStableElapsedMs = 0;
+char autoTrimBlockReason[40] = "disabled";
+char autoTrimStopReason[40] = "";
 int balancePwm = 0;
 int finalLeftPwm = 0;
 int finalRightPwm = 0;
@@ -64,6 +78,45 @@ RecoveryState recoveryState = RecoveryState::WaitingUpright;
 unsigned long recoveryStableStartMs = 0;
 unsigned long recoveryStableMs = 0;
 bool autoRecoveryCalibrating = false;
+
+enum class AutoTrimPhase {
+  Idle,
+  WaitingStable,
+  TestPositive,
+  TestNegative,
+  Done,
+};
+
+AutoTrimPhase autoTrimPhase = AutoTrimPhase::Idle;
+
+double autoTrimTestOffset();
+
+const char *autoTrimPhaseText() {
+  switch (autoTrimPhase) {
+    case AutoTrimPhase::Idle:
+      return "Idle";
+    case AutoTrimPhase::WaitingStable:
+      return "Waiting";
+    case AutoTrimPhase::TestPositive:
+      return "Test +";
+    case AutoTrimPhase::TestNegative:
+      return "Test -";
+    case AutoTrimPhase::Done:
+      return "Done";
+    default:
+      return "Unknown";
+  }
+}
+
+const char *autoTrimDirectionText() {
+  if (autoTrimPhase == AutoTrimPhase::TestPositive) {
+    return "+";
+  }
+  if (autoTrimPhase == AutoTrimPhase::TestNegative) {
+    return "-";
+  }
+  return "none";
+}
 
 const char *recoveryStateText() {
   switch (recoveryState) {
@@ -87,6 +140,23 @@ void clearDriveCommand() {
   currentDriveTurn = 0.0f;
   driveAngleOffsetDeg = 0.0f;
   driveTurnPwm = 0;
+}
+
+void resetAutoTrimState() {
+  autoTrimOffsetDeg = 0.0;
+  autoTrimScore = 0.0;
+  autoTrimPositiveScore = 0.0;
+  autoTrimNegativeScore = 0.0;
+  autoTrimBestScore = 999999.0;
+  autoTrimScoreSum = 0.0;
+  autoTrimScoreSamples = 0;
+  autoTrimNoImprovementCycles = 0;
+  autoTrimPhaseStartMs = 0;
+  autoTrimStableStartMs = 0;
+  autoTrimStableElapsedMs = 0;
+  strlcpy(autoTrimBlockReason, "reset", sizeof(autoTrimBlockReason));
+  strlcpy(autoTrimStopReason, "", sizeof(autoTrimStopReason));
+  autoTrimPhase = AutoTrimPhase::Idle;
 }
 
 float turnRateFromGyroZ(const Imu6500Test::ImuSample &imu) {
@@ -169,11 +239,207 @@ void updateBalanceSetpointFromSpeed() {
                                             speedHoldMaxAngleDeg);
   }
 
-  const double setpoint = constrain(manualAngleSetpointDeg + speedHoldAngleCorrectionDeg +
+  const double setpoint = constrain(manualAngleSetpointDeg + autoTrimOffsetDeg +
+                                        autoTrimTestOffset() +
+                                        speedHoldAngleCorrectionDeg +
                                         static_cast<double>(driveAngleOffsetDeg),
                                     Config::SETPOINT_MIN_DEG,
                                     Config::SETPOINT_MAX_DEG);
   BalancePid::setSetpoint(setpoint);
+}
+
+bool canRunAutoTrim(const Imu6500Test::ImuSample &imu) {
+  if (!autoTrimEnabled) {
+    strlcpy(autoTrimBlockReason, "disabled", sizeof(autoTrimBlockReason));
+    return false;
+  }
+  if (recoveryState != RecoveryState::Running) {
+    strlcpy(autoTrimBlockReason, "not running", sizeof(autoTrimBlockReason));
+    return false;
+  }
+  if (!motorsEnabled) {
+    strlcpy(autoTrimBlockReason, "motors off", sizeof(autoTrimBlockReason));
+    return false;
+  }
+  if (safetyStop || safetyFault) {
+    strlcpy(autoTrimBlockReason, "safety", sizeof(autoTrimBlockReason));
+    return false;
+  }
+  if (SharedState::isOtaUpdating()) {
+    strlcpy(autoTrimBlockReason, "ota", sizeof(autoTrimBlockReason));
+    return false;
+  }
+  if (fabsf(targetDriveForward) > 0.01f || fabsf(targetDriveTurn) > 0.01f ||
+      fabsf(currentDriveForward) > 0.01f || fabsf(currentDriveTurn) > 0.01f) {
+    strlcpy(autoTrimBlockReason, "drive active", sizeof(autoTrimBlockReason));
+    return false;
+  }
+  if (!imu.angleInitialized) {
+    strlcpy(autoTrimBlockReason, "angle not ready", sizeof(autoTrimBlockReason));
+    return false;
+  }
+  if (fabsf(imu.selectedAngleDeg) > Config::AUTO_RECOVERY_ANGLE_WINDOW_DEG) {
+    strlcpy(autoTrimBlockReason, "angle too high", sizeof(autoTrimBlockReason));
+    return false;
+  }
+  if (fabsf(averageSpeed) > Config::AUTO_TRIM_MAX_SPEED_COUNTS_PER_SEC) {
+    strlcpy(autoTrimBlockReason, "speed too high", sizeof(autoTrimBlockReason));
+    return false;
+  }
+  if (abs(BalancePid::getOutput()) > Config::AUTO_TRIM_MAX_PWM_FOR_TEST) {
+    strlcpy(autoTrimBlockReason, "pwm too high", sizeof(autoTrimBlockReason));
+    return false;
+  }
+  strlcpy(autoTrimBlockReason, "ready", sizeof(autoTrimBlockReason));
+  return true;
+}
+
+void resetAutoTrimMeasurement() {
+  autoTrimScoreSum = 0.0;
+  autoTrimScoreSamples = 0;
+}
+
+void addAutoTrimSample() {
+  const double sampleScore = fabs(static_cast<double>(averageSpeed)) +
+                             0.02 * fabs(static_cast<double>(BalancePid::getOutput()));
+  autoTrimScoreSum += sampleScore;
+  ++autoTrimScoreSamples;
+  autoTrimScore = sampleScore;
+}
+
+double finishAutoTrimMeasurement() {
+  if (autoTrimScoreSamples == 0) {
+    return 999999.0;
+  }
+  return autoTrimScoreSum / static_cast<double>(autoTrimScoreSamples);
+}
+
+void updateAutoTrim(const Imu6500Test::ImuSample &imu) {
+  if (!autoTrimEnabled) {
+    autoTrimPhase = AutoTrimPhase::Idle;
+    autoTrimStableElapsedMs = 0;
+    strlcpy(autoTrimBlockReason, "disabled", sizeof(autoTrimBlockReason));
+    return;
+  }
+
+  if (autoTrimPhase == AutoTrimPhase::Done) {
+    strlcpy(autoTrimBlockReason, "done", sizeof(autoTrimBlockReason));
+    return;
+  }
+
+  const unsigned long now = millis();
+  if (!canRunAutoTrim(imu)) {
+    autoTrimPhase = AutoTrimPhase::WaitingStable;
+    autoTrimStableStartMs = 0;
+    autoTrimStableElapsedMs = 0;
+    resetAutoTrimMeasurement();
+    return;
+  }
+
+  switch (autoTrimPhase) {
+    case AutoTrimPhase::Idle:
+    case AutoTrimPhase::WaitingStable:
+      if (autoTrimStableStartMs == 0) {
+        autoTrimStableStartMs = now;
+      }
+      autoTrimStableElapsedMs = now - autoTrimStableStartMs;
+      strlcpy(autoTrimBlockReason, "waiting stable", sizeof(autoTrimBlockReason));
+      if (autoTrimStableElapsedMs >= Config::AUTO_TRIM_STABLE_BEFORE_START_MS) {
+        autoTrimPhase = AutoTrimPhase::TestPositive;
+        autoTrimPhaseStartMs = now;
+        autoTrimStableElapsedMs = Config::AUTO_TRIM_STABLE_BEFORE_START_MS;
+        strlcpy(autoTrimBlockReason, "testing +", sizeof(autoTrimBlockReason));
+        resetAutoTrimMeasurement();
+      } else {
+        autoTrimPhase = AutoTrimPhase::WaitingStable;
+      }
+      break;
+
+    case AutoTrimPhase::TestPositive:
+      strlcpy(autoTrimBlockReason, "testing +", sizeof(autoTrimBlockReason));
+      addAutoTrimSample();
+      if (now - autoTrimPhaseStartMs >= Config::AUTO_TRIM_TEST_WINDOW_MS) {
+        autoTrimPositiveScore = finishAutoTrimMeasurement();
+        autoTrimPhase = AutoTrimPhase::TestNegative;
+        autoTrimPhaseStartMs = now;
+        resetAutoTrimMeasurement();
+      }
+      break;
+
+    case AutoTrimPhase::TestNegative:
+      strlcpy(autoTrimBlockReason, "testing -", sizeof(autoTrimBlockReason));
+      addAutoTrimSample();
+      if (now - autoTrimPhaseStartMs >= Config::AUTO_TRIM_TEST_WINDOW_MS) {
+        autoTrimNegativeScore = finishAutoTrimMeasurement();
+        const double bestCycleScore = min(autoTrimPositiveScore, autoTrimNegativeScore);
+        const double scoreDelta = fabs(autoTrimPositiveScore - autoTrimNegativeScore);
+        const bool improved = bestCycleScore + Config::AUTO_TRIM_MIN_SCORE_DELTA < autoTrimBestScore;
+
+        if (bestCycleScore < autoTrimBestScore) {
+          autoTrimBestScore = bestCycleScore;
+        }
+
+        if (scoreDelta < Config::AUTO_TRIM_MIN_SCORE_DELTA) {
+          ++autoTrimNoImprovementCycles;
+        } else if (improved) {
+          autoTrimNoImprovementCycles = 0;
+        } else {
+          ++autoTrimNoImprovementCycles;
+        }
+
+        if (scoreDelta >= Config::AUTO_TRIM_MIN_SCORE_DELTA && autoTrimPositiveScore < autoTrimNegativeScore) {
+          autoTrimOffsetDeg += Config::AUTO_TRIM_APPLY_STEP_DEG;
+        } else if (scoreDelta >= Config::AUTO_TRIM_MIN_SCORE_DELTA && autoTrimNegativeScore < autoTrimPositiveScore) {
+          autoTrimOffsetDeg -= Config::AUTO_TRIM_APPLY_STEP_DEG;
+        }
+        autoTrimOffsetDeg = constrain(autoTrimOffsetDeg, -Config::AUTO_TRIM_MAX_OFFSET_DEG,
+                                      Config::AUTO_TRIM_MAX_OFFSET_DEG);
+        autoTrimScore = bestCycleScore;
+
+        if (autoTrimBestScore <= Config::AUTO_TRIM_TARGET_SCORE) {
+          autoTrimPhase = AutoTrimPhase::Done;
+          strlcpy(autoTrimStopReason, "target score", sizeof(autoTrimStopReason));
+          strlcpy(autoTrimBlockReason, "done", sizeof(autoTrimBlockReason));
+          resetAutoTrimMeasurement();
+          break;
+        }
+        if (fabs(autoTrimOffsetDeg) >= Config::AUTO_TRIM_MAX_OFFSET_DEG) {
+          autoTrimPhase = AutoTrimPhase::Done;
+          strlcpy(autoTrimStopReason, "max offset", sizeof(autoTrimStopReason));
+          strlcpy(autoTrimBlockReason, "done", sizeof(autoTrimBlockReason));
+          resetAutoTrimMeasurement();
+          break;
+        }
+        if (autoTrimNoImprovementCycles >= Config::AUTO_TRIM_MAX_NO_IMPROVEMENT_CYCLES) {
+          autoTrimPhase = AutoTrimPhase::Done;
+          strlcpy(autoTrimStopReason, "no improvement", sizeof(autoTrimStopReason));
+          strlcpy(autoTrimBlockReason, "done", sizeof(autoTrimBlockReason));
+          resetAutoTrimMeasurement();
+          break;
+        }
+
+        autoTrimPhase = AutoTrimPhase::WaitingStable;
+        autoTrimStableStartMs = now;
+        autoTrimStableElapsedMs = 0;
+        strlcpy(autoTrimBlockReason, "applied", sizeof(autoTrimBlockReason));
+        resetAutoTrimMeasurement();
+      }
+      break;
+
+    case AutoTrimPhase::Done:
+      strlcpy(autoTrimBlockReason, "done", sizeof(autoTrimBlockReason));
+      break;
+  }
+}
+
+double autoTrimTestOffset() {
+  if (autoTrimPhase == AutoTrimPhase::TestPositive) {
+    return Config::AUTO_TRIM_TEST_OFFSET_DEG;
+  }
+  if (autoTrimPhase == AutoTrimPhase::TestNegative) {
+    return -Config::AUTO_TRIM_TEST_OFFSET_DEG;
+  }
+  return 0.0;
 }
 
 void setFault(const char *message) {
@@ -398,6 +664,17 @@ void fillSharedState() {
   state.autoRecoveryCalibrating = autoRecoveryCalibrating;
   state.autoRecoveryStableMs = recoveryStableMs;
   strlcpy(state.autoRecoveryState, recoveryStateText(), sizeof(state.autoRecoveryState));
+  state.autoTrimEnabled = autoTrimEnabled;
+  state.autoTrimDone = autoTrimPhase == AutoTrimPhase::Done;
+  state.autoTrimOffsetDeg = autoTrimOffsetDeg;
+  state.autoTrimScore = autoTrimScore;
+  state.autoTrimBestScore = autoTrimBestScore >= 999999.0 ? 0.0 : autoTrimBestScore;
+  state.autoTrimNoImprovementCycles = autoTrimNoImprovementCycles;
+  state.autoTrimStableElapsedMs = autoTrimStableElapsedMs;
+  strlcpy(state.autoTrimPhase, autoTrimPhaseText(), sizeof(state.autoTrimPhase));
+  strlcpy(state.autoTrimDirection, autoTrimDirectionText(), sizeof(state.autoTrimDirection));
+  strlcpy(state.autoTrimBlockReason, autoTrimBlockReason, sizeof(state.autoTrimBlockReason));
+  strlcpy(state.autoTrimStopReason, autoTrimStopReason, sizeof(state.autoTrimStopReason));
   state.leftPwm = MotorsTest::getLeftPwm();
   state.rightPwm = MotorsTest::getRightPwm();
   state.balancePwm = balancePwm;
@@ -551,6 +828,24 @@ void handleCommand(const RobotCommand &command) {
     lastDriveCommandMs = millis();
   }
 
+  if (command.updateAutoTrimEnabled) {
+    autoTrimEnabled = command.autoTrimEnabled;
+    if (autoTrimEnabled && autoTrimPhase != AutoTrimPhase::Done) {
+      autoTrimPhase = AutoTrimPhase::WaitingStable;
+    } else if (!autoTrimEnabled) {
+      autoTrimPhase = AutoTrimPhase::Idle;
+    }
+    autoTrimStableStartMs = 0;
+    resetAutoTrimMeasurement();
+  }
+
+  if (command.resetAutoTrim) {
+    const bool keepEnabled = autoTrimEnabled;
+    resetAutoTrimState();
+    autoTrimEnabled = keepEnabled;
+    autoTrimPhase = autoTrimEnabled ? AutoTrimPhase::WaitingStable : AutoTrimPhase::Idle;
+  }
+
   if (command.resetEncoders) {
     EncodersTest::reset();
     Serial.println(F("Encoder counts reset by command"));
@@ -671,6 +966,8 @@ void printPidIfDue() {
   Serial.print(speedDifference, 2);
   Serial.print(F(" speedHoldAngle="));
   Serial.print(speedHoldAngleCorrectionDeg, 3);
+  Serial.print(F(" autoTrim="));
+  Serial.print(autoTrimOffsetDeg, 3);
   Serial.print(F(" driveF="));
   Serial.print(currentDriveForward, 2);
   Serial.print(F(" driveT="));
@@ -734,6 +1031,7 @@ void update() {
       dtSeconds = static_cast<float>(now - previousControlMs) / 1000.0f;
     }
     previousControlMs = now;
+    updateAutoTrim(imu);
     updateBalanceSetpointFromSpeed();
     BalancePid::update(imu.selectedAngleDeg, imu.gyroRateDegPerSec, dtSeconds, motorsEnabled,
                        safetyStop);

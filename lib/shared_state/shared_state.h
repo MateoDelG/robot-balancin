@@ -56,6 +56,17 @@ struct RobotState {
   bool autoRecoveryCalibrating = false;
   unsigned long autoRecoveryStableMs = 0;
   char autoRecoveryState[20] = "Boot";
+  bool autoTrimEnabled = false;
+  bool autoTrimDone = false;
+  double autoTrimOffsetDeg = 0.0;
+  double autoTrimScore = 0.0;
+  double autoTrimBestScore = 0.0;
+  uint8_t autoTrimNoImprovementCycles = 0;
+  unsigned long autoTrimStableElapsedMs = 0;
+  char autoTrimPhase[20] = "Idle";
+  char autoTrimDirection[8] = "none";
+  char autoTrimBlockReason[40] = "disabled";
+  char autoTrimStopReason[40] = "";
 
   int leftPwm = 0;
   int rightPwm = 0;
@@ -121,6 +132,8 @@ struct RobotCommand {
   bool updateSpeedHoldEnabled = false;
   bool updateSpeedHoldConfig = false;
   bool updateDriveCommand = false;
+  bool updateAutoTrimEnabled = false;
+  bool resetAutoTrim = false;
   double pidKp = 0.0;
   double pidKi = 0.0;
   double pidKd = 0.0;
@@ -141,6 +154,7 @@ struct RobotCommand {
   double speedHoldMaxAngleDeg = 0.0;
   float driveForward = 0.0f;
   float driveTurn = 0.0f;
+  bool autoTrimEnabled = false;
   int pidMaxPwm = 0;
   int motorDeadzonePwm = 0;
 };
@@ -183,5 +197,7 @@ void requestGyroZHoldConfig(double kp, int maxCorrection);
 void requestSpeedHoldEnabled(bool enabled);
 void requestSpeedHoldConfig(double kp, double maxAngleDeg);
 void requestDriveCommand(float forward, float turn);
+void requestAutoTrimEnabled(bool enabled);
+void requestAutoTrimReset();
 
 }  // namespace SharedState
