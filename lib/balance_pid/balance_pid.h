@@ -28,12 +28,10 @@ double getITermLimit();
 bool isIntegralEnabled();
 int getOutputMin();
 int getOutputMax();
-int getMotorDeadzonePwm();
 
 void setTunings(double kp, double ki, double kd);
 void setSetpoint(double setpointDeg);
 void setOutputLimit(int maxPwm);
-void setMotorDeadzonePwm(int pwm);
 void setIntegralLimit(double limit);
 void setITermLimit(double limit);
 void setIntegralEnabled(bool enabled);

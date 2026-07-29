@@ -5,8 +5,10 @@
 #include <string.h>
 
 #include "balance_pid.h"
+#include "control_settings.h"
 #include "encoders_test.h"
 #include "imu6500_test.h"
+#include "imu9250.h"
 #include "motors_test.h"
 #include "shared_state.h"
 #include "../../include/config.h"
@@ -66,6 +68,27 @@ char autoTrimStopReason[40] = "";
 int balancePwm = 0;
 int finalLeftPwm = 0;
 int finalRightPwm = 0;
+bool shadowControlReady = false;
+int shadowPidOutput = 0;
+char shadowStatus[80] = "Boot";
+bool balanceControlEnabled = false;
+bool balanceEnableRequested = false;
+double targetBalanceSetpointDeg = 0.0;
+bool controlSettingsSaved = true;
+char controlSettingsMessage[48] = "loaded";
+bool benchTestArmed = false;
+bool benchTestActive = false;
+int benchLeftPwm = 0;
+int benchRightPwm = 0;
+unsigned long benchArmExpiresMs = 0;
+unsigned long benchLastHeartbeatMs = 0;
+char benchTestCommand[24] = "stopped";
+
+const char *shadowDirection(int output) {
+  if (output > 2) return "PWM positivo";
+  if (output < -2) return "PWM negativo";
+  return "cero";
+}
 
 enum class RecoveryState {
   WaitingUpright,
@@ -604,6 +627,374 @@ void updateEncoderDiagnostics() {
   previousEncoderMs = now;
 }
 
+void stopBenchTest(bool disarm, const char *reason) {
+  MotorsTest::disable();
+  benchTestActive = false;
+  benchLeftPwm = 0;
+  benchRightPwm = 0;
+  benchLastHeartbeatMs = 0;
+  if (disarm) {
+    benchTestArmed = false;
+    benchArmExpiresMs = 0;
+  }
+  strlcpy(benchTestCommand, reason, sizeof(benchTestCommand));
+}
+
+void stopMpu9250Balance(const char *reason) {
+  balanceControlEnabled = false;
+  balanceEnableRequested = false;
+  motorsEnabled = false;
+  safetyStop = true;
+  BalancePid::resetIntegral();
+  if (!benchTestActive) MotorsTest::disable();
+  strlcpy(shadowStatus, reason, sizeof(shadowStatus));
+}
+
+void setControlSettingsResult(bool saved, const char *message) {
+  controlSettingsSaved = saved;
+  strlcpy(controlSettingsMessage, message, sizeof(controlSettingsMessage));
+}
+
+const char *benchCommandName(int leftPwm, int rightPwm) {
+  if (leftPwm > 0 && rightPwm == 0) return "left positive";
+  if (leftPwm < 0 && rightPwm == 0) return "left negative";
+  if (rightPwm > 0 && leftPwm == 0) return "right positive";
+  if (rightPwm < 0 && leftPwm == 0) return "right negative";
+  if (leftPwm > 0 && rightPwm > 0) return "both positive";
+  if (leftPwm < 0 && rightPwm < 0) return "both negative";
+  return "custom";
+}
+
+void updateBenchTestSafety() {
+  const unsigned long now = millis();
+  const Imu9250::RawSample imu = Imu9250::getSample();
+  if (!benchTestArmed) {
+    if (!balanceControlEnabled) MotorsTest::disable();
+    return;
+  }
+  if (SharedState::isOtaUpdating()) {
+    stopBenchTest(true, "stopped by OTA");
+  } else if (strcmp(imu.calibrationMode, "idle") != 0) {
+    stopBenchTest(true, "stopped by calibration");
+  } else if (static_cast<long>(now - benchArmExpiresMs) >= 0) {
+    stopBenchTest(true, "arm expired");
+  } else if (benchTestActive && now - benchLastHeartbeatMs > Config::BENCH_TEST_WATCHDOG_MS) {
+    stopBenchTest(false, "watchdog stop");
+  } else if (!benchTestActive) {
+    MotorsTest::disable();
+  }
+}
+
+void fillRawImuState() {
+  const Imu9250::RawSample imu = Imu9250::getSample();
+  const RobotState previousState = SharedState::getState();
+  RobotState state;
+  state.imuRawAxG = imu.axG;
+  state.imuRawAyG = imu.ayG;
+  state.imuRawAzG = imu.azG;
+  state.imuRawAccelNormG = imu.accelNormG;
+  state.imuRawGxDps = imu.gxDps;
+  state.imuRawGyDps = imu.gyDps;
+  state.imuRawGzDps = imu.gzDps;
+  state.imuRawMx = imu.mx;
+  state.imuRawMy = imu.my;
+  state.imuRawMz = imu.mz;
+  state.imuRawMagDirectionDeg = imu.magneticDirectionDeg;
+  state.imuCorrectedAxG = imu.correctedAxG;
+  state.imuCorrectedAyG = imu.correctedAyG;
+  state.imuCorrectedAzG = imu.correctedAzG;
+  state.imuCorrectedGxDps = imu.correctedGxDps;
+  state.imuCorrectedGyDps = imu.correctedGyDps;
+  state.imuCorrectedGzDps = imu.correctedGzDps;
+  state.imuCorrectedMxUt = imu.correctedMxUt;
+  state.imuCorrectedMyUt = imu.correctedMyUt;
+  state.imuCorrectedMzUt = imu.correctedMzUt;
+  state.imuMagNormUt = imu.magneticNormUt;
+  state.imuAccelRollDeg = imu.accelRollDeg;
+  state.imuAccelPitchDeg = imu.accelPitchDeg;
+  state.imuFilteredRollDeg = imu.filteredRollDeg;
+  state.imuFilteredPitchDeg = imu.filteredPitchDeg;
+  state.imuRelativeRollDeg = imu.relativeRollDeg;
+  state.imuRelativePitchDeg = imu.relativePitchDeg;
+  state.imuHeadingDeg = imu.headingDeg;
+  state.imuFilterAlpha = imu.filterAlpha;
+  for (uint8_t axis = 0; axis < 3; ++axis) {
+    state.imuAccelOffset[axis] = imu.accelOffset[axis];
+    state.imuAccelScale[axis] = imu.accelScale[axis];
+    state.imuGyroOffset[axis] = imu.gyroOffset[axis];
+    state.imuMagOffset[axis] = imu.magOffset[axis];
+    state.imuMagScale[axis] = imu.magScale[axis];
+  }
+  state.imuVerticalRollDeg = imu.verticalRollDeg;
+  state.imuVerticalPitchDeg = imu.verticalPitchDeg;
+  state.imuRawSampleRateHz = imu.sampleRateHz;
+  state.imuAccelRateHz = imu.accelRateHz;
+  state.imuGyroRateHz = imu.gyroRateHz;
+  state.imuMagRateHz = imu.magRateHz;
+  state.imuCalibrationSamples = imu.calibrationSamples;
+  state.imuSampleAgeMs = imu.lastSampleMs == 0 ? ULONG_MAX : millis() - imu.lastSampleMs;
+  state.imuRawAddress = imu.address;
+  state.imuRawId = imu.imuId;
+  state.imuRawMagId = imu.magnetometerId;
+  state.imuRawAccelReady = imu.accelReady;
+  state.imuRawGyroReady = imu.gyroReady;
+  state.imuRawMagReady = imu.magnetometerReady;
+  state.imuFilterReady = imu.filterReady;
+  state.imuCalibrationStored = imu.calibrationStored;
+  state.imuAccelCalibrated = imu.accelCalibrated;
+  state.imuGyroCalibrated = imu.gyroCalibrated;
+  state.imuMagCalibrated = imu.magCalibrated;
+  state.imuVerticalCalibrated = imu.verticalCalibrated;
+  state.imuAccelWizardActive = imu.accelWizardActive;
+  state.imuAccelPoseIndex = imu.accelPoseIndex;
+  strlcpy(state.imuCalibrationMode, imu.calibrationMode, sizeof(state.imuCalibrationMode));
+  strlcpy(state.imuCalibrationStatus, imu.calibrationStatus, sizeof(state.imuCalibrationStatus));
+  strlcpy(state.imuAccelPoseName, imu.accelPoseName, sizeof(state.imuAccelPoseName));
+  state.angleAccelDeg = imu.accelPitchDeg - imu.verticalPitchDeg;
+  state.angleFilteredDeg = imu.relativePitchDeg;
+  state.angleComplementaryDeg = imu.relativePitchDeg;
+  state.selectedAngleDeg = imu.relativePitchDeg;
+  state.gyroRateDegPerSec = imu.correctedGyDps;
+  state.imuReady = Imu9250::isReady();
+  state.gyroCalibrated = imu.gyroCalibrated;
+  state.angleInitialized = imu.filterReady && imu.verticalCalibrated;
+  state.shadowControlReady = shadowControlReady;
+  state.shadowPidOutput = shadowPidOutput;
+  strlcpy(state.shadowDirection, shadowDirection(shadowPidOutput), sizeof(state.shadowDirection));
+  state.balanceControlEnabled = balanceControlEnabled;
+  state.pidTargetSetpoint = targetBalanceSetpointDeg;
+  state.controlSettingsSaved = controlSettingsSaved;
+  strlcpy(state.controlSettingsMessage, controlSettingsMessage,
+          sizeof(state.controlSettingsMessage));
+  state.benchTestArmed = benchTestArmed;
+  state.benchTestActive = benchTestActive;
+  state.benchArmRemainingMs = benchTestArmed && static_cast<long>(benchArmExpiresMs - millis()) > 0
+                                  ? benchArmExpiresMs - millis()
+                                  : 0;
+  state.benchWatchdogAgeMs = benchTestActive ? millis() - benchLastHeartbeatMs : 0;
+  strlcpy(state.benchTestCommand, benchTestCommand, sizeof(state.benchTestCommand));
+  state.pidSetpoint = BalancePid::getSetpoint();
+  state.pidInput = BalancePid::getInput();
+  state.pidError = BalancePid::getError();
+  state.pidOutput = BalancePid::getOutputRaw();
+  state.pidPTerm = BalancePid::getPTerm();
+  state.pidITerm = BalancePid::getITerm();
+  state.pidDTerm = BalancePid::getDTerm();
+  state.pidOutputBeforeLimit = BalancePid::getOutputBeforeLimit();
+  state.pidOutputAfterLimit = BalancePid::getOutputAfterLimit();
+  state.pidKp = BalancePid::getKp();
+  state.pidKi = BalancePid::getKi();
+  state.pidKd = BalancePid::getKd();
+  state.pidOutputMin = BalancePid::getOutputMin();
+  state.pidOutputMax = BalancePid::getOutputMax();
+  state.motorLeftMinPwm = MotorsTest::getLeftMinPwm();
+  state.motorLeftMaxPwm = MotorsTest::getLeftMaxPwm();
+  state.motorRightMinPwm = MotorsTest::getRightMinPwm();
+  state.motorRightMaxPwm = MotorsTest::getRightMaxPwm();
+  state.motorLeftCompensation = MotorsTest::getLeftCompensation();
+  state.motorRightCompensation = MotorsTest::getRightCompensation();
+  state.pidIntegralEnabled = BalancePid::isIntegralEnabled();
+  state.motorsEnabled = balanceControlEnabled;
+  state.safetyStop = !balanceControlEnabled;
+  state.safetyFault = !shadowControlReady;
+  state.autoRecoveryEnabled = false;
+  state.rawLeftEncoder = EncodersTest::rawLeftCount();
+  state.rawRightEncoder = EncodersTest::rawRightCount();
+  state.correctedLeftEncoder = EncodersTest::leftCount();
+  state.correctedRightEncoder = EncodersTest::rightCount();
+  state.leftSpeed = leftSpeed;
+  state.rightSpeed = rightSpeed;
+  state.speedAverage = averageSpeed;
+  state.speedDifference = speedDifference;
+  state.leftPwm = MotorsTest::getLeftPwm();
+  state.rightPwm = MotorsTest::getRightPwm();
+  state.balancePwm = 0;
+  state.otaAvailable = previousState.otaAvailable;
+  state.otaUpdating = previousState.otaUpdating;
+  strlcpy(state.faultMessage, shadowStatus, sizeof(state.faultMessage));
+  SharedState::setState(state);
+}
+
+void handleRawImuCommand(const RobotCommand &command) {
+  const bool calibrationRequested = command.calibrateGyro || command.startAccelCalibration ||
+                                    command.captureAccelPose || command.calibrateMagnetometer ||
+                                    command.calibrateVertical || command.clearImuCalibration;
+  if (calibrationRequested) {
+    stopMpu9250Balance("PID disabled: calibration");
+    stopBenchTest(true, "stopped by calibration");
+  }
+  if (command.otaStart) {
+    stopMpu9250Balance("PID disabled: OTA");
+    stopBenchTest(true, "stopped by OTA");
+  }
+  if (command.stopMotors || command.disableMotors) {
+    stopBenchTest(true, command.stopMotors ? "global stop" : "motors disabled");
+    stopMpu9250Balance(command.stopMotors ? "PID stopped" : "PID disabled");
+  }
+  if (command.enableMotors && !command.stopMotors && !command.disableMotors) {
+    stopBenchTest(true, "disarmed by PID");
+    balanceEnableRequested = true;
+  }
+  if (command.calibrateGyro) Imu9250::startGyroCalibration();
+  if (command.startAccelCalibration) Imu9250::startAccelCalibration();
+  if (command.captureAccelPose) Imu9250::captureAccelPose();
+  if (command.calibrateMagnetometer) Imu9250::startMagCalibration();
+  if (command.calibrateVertical) Imu9250::saveVertical();
+  if (command.clearImuCalibration) Imu9250::clearCalibration();
+  if (command.resetEncoders) {
+    EncodersTest::reset();
+    previousLeftEncoder = 0;
+    previousRightEncoder = 0;
+    leftSpeed = 0.0f;
+    rightSpeed = 0.0f;
+    averageSpeed = 0.0f;
+    speedDifference = 0.0f;
+    previousEncoderMs = millis();
+  }
+  if (command.updatePidTunings) {
+    stopMpu9250Balance("PID disabled: tunings changed");
+    const bool saved = ControlSettings::savePid(command.pidKp, command.pidKi, command.pidKd);
+    setControlSettingsResult(saved, saved ? "PID saved" : "PID save failed");
+    if (saved) BalancePid::setTunings(command.pidKp, command.pidKi, command.pidKd);
+  }
+  if (command.updatePidSetpoint) {
+    stopMpu9250Balance("PID disabled: setpoint changed");
+    const bool saved = ControlSettings::saveSetpoint(command.pidSetpoint);
+    setControlSettingsResult(saved, saved ? "Setpoint saved" : "Setpoint save failed");
+    if (saved) targetBalanceSetpointDeg = command.pidSetpoint;
+  }
+  if (command.updatePidMaxPwm) {
+    stopMpu9250Balance("PID disabled: PWM limit changed");
+    const bool saved = ControlSettings::savePidMaxPwm(command.pidMaxPwm);
+    setControlSettingsResult(saved, saved ? "PID PWM saved" : "PID PWM save failed");
+    if (saved) BalancePid::setOutputLimit(command.pidMaxPwm);
+  }
+  if (command.updateMotorPwmLimits) {
+    stopMpu9250Balance("PID disabled: motor limits changed");
+    stopBenchTest(true, "settings updated");
+    const bool saved = ControlSettings::saveMotorConfig(
+        command.motorLeftMinPwm, command.motorLeftMaxPwm,
+        command.motorRightMinPwm, command.motorRightMaxPwm,
+        command.motorLeftCompensation, command.motorRightCompensation);
+    setControlSettingsResult(saved, saved ? "Motor limits saved" : "Motor limits save failed");
+  }
+
+  if (command.disarmBenchTest) {
+    stopBenchTest(true, "disarmed");
+  } else if (command.armBenchTest) {
+    stopMpu9250Balance("PID disabled: bench test");
+    const Imu9250::RawSample imu = Imu9250::getSample();
+    if (!SharedState::isOtaUpdating() && strcmp(imu.calibrationMode, "idle") == 0) {
+      stopBenchTest(false, "armed");
+      benchTestArmed = true;
+      benchArmExpiresMs = millis() + Config::BENCH_TEST_ARM_TIMEOUT_MS;
+    }
+  }
+
+  if (command.updateBenchTest) {
+    const int leftPwm = constrain(command.benchLeftPwm, -Config::BENCH_TEST_MAX_PWM,
+                                  Config::BENCH_TEST_MAX_PWM);
+    const int rightPwm = constrain(command.benchRightPwm, -Config::BENCH_TEST_MAX_PWM,
+                                   Config::BENCH_TEST_MAX_PWM);
+    if (leftPwm == 0 && rightPwm == 0) {
+      stopBenchTest(false, "stopped");
+    } else if (benchTestArmed && !SharedState::isOtaUpdating()) {
+      benchLeftPwm = leftPwm;
+      benchRightPwm = rightPwm;
+      benchLastHeartbeatMs = millis();
+      benchTestActive = true;
+      strlcpy(benchTestCommand, benchCommandName(leftPwm, rightPwm), sizeof(benchTestCommand));
+      MotorsTest::setLeftPwm(leftPwm, Config::BENCH_TEST_MAX_PWM);
+      MotorsTest::setRightPwm(rightPwm, Config::BENCH_TEST_MAX_PWM);
+    }
+  }
+}
+
+void updateShadowControl() {
+  const Imu9250::RawSample imu = Imu9250::getSample();
+  const unsigned long now = millis();
+  const unsigned long sampleAgeMs = imu.lastSampleMs == 0 ? ULONG_MAX : now - imu.lastSampleMs;
+  const char *blockReason = nullptr;
+  if (SharedState::isOtaUpdating()) blockReason = "OTA active";
+  else if (!Imu9250::isReady()) blockReason = "IMU not ready";
+  else if (!isfinite(imu.relativePitchDeg) || !isfinite(imu.correctedGyDps) ||
+           !isfinite(targetBalanceSetpointDeg))
+    blockReason = "invalid IMU value";
+  else if (!imu.accelCalibrated) blockReason = "accel not calibrated";
+  else if (!imu.gyroCalibrated) blockReason = "gyro not calibrated";
+  else if (!imu.verticalCalibrated) blockReason = "vertical not calibrated";
+  else if (!imu.filterReady) blockReason = "filter not ready";
+  else if (strcmp(imu.calibrationMode, "idle") != 0) blockReason = "calibration active";
+  else if (sampleAgeMs > Config::SHADOW_IMU_TIMEOUT_MS) blockReason = "stale IMU sample";
+  else if (fabsf(imu.relativePitchDeg) > Config::MAX_SAFE_ANGLE_DEG) blockReason = "unsafe pitch";
+  else if (fabs(targetBalanceSetpointDeg - imu.relativePitchDeg) > Config::MAX_SAFE_ANGLE_DEG)
+    blockReason = "unsafe PID error";
+  shadowControlReady = blockReason == nullptr;
+
+  float dtSeconds = static_cast<float>(Config::CONTROL_TASK_PERIOD_MS) / 1000.0f;
+  if (previousControlMs != 0 && now > previousControlMs) dtSeconds = static_cast<float>(now - previousControlMs) / 1000.0f;
+  if (dtSeconds <= 0.0f || dtSeconds > 0.1f)
+    dtSeconds = static_cast<float>(Config::CONTROL_TASK_PERIOD_MS) / 1000.0f;
+  previousControlMs = now;
+  const double setpointStep = Config::PID_SETPOINT_SLEW_DEG_PER_SEC * dtSeconds;
+  const double setpointDelta = targetBalanceSetpointDeg - BalancePid::getSetpoint();
+  BalancePid::setSetpoint(BalancePid::getSetpoint() + constrain(setpointDelta, -setpointStep, setpointStep));
+
+  bool enableRejected = false;
+  if (balanceEnableRequested) {
+    balanceEnableRequested = false;
+    if (blockReason != nullptr) {
+      snprintf(shadowStatus, sizeof(shadowStatus), "PID blocked: %s", blockReason);
+      enableRejected = true;
+    } else if (benchTestArmed || benchTestActive) {
+      strlcpy(shadowStatus, "PID blocked: bench test armed", sizeof(shadowStatus));
+      enableRejected = true;
+    } else if (fabs(BalancePid::getSetpoint() - imu.relativePitchDeg) >
+               Config::PID_ARM_MAX_ERROR_DEG) {
+      strlcpy(shadowStatus, "PID blocked: move near setpoint", sizeof(shadowStatus));
+      enableRejected = true;
+    } else {
+      balanceControlEnabled = true;
+      motorsEnabled = true;
+      safetyStop = false;
+      safetyFault = false;
+      BalancePid::resetIntegral();
+    }
+  }
+
+  if (balanceControlEnabled) {
+    if (blockReason != nullptr) {
+      char reason[80];
+      snprintf(reason, sizeof(reason), "PID stopped: %s", blockReason);
+      stopMpu9250Balance(reason);
+    }
+  }
+
+  const float safePitchDeg = isfinite(imu.relativePitchDeg) ? imu.relativePitchDeg : 0.0f;
+  const float safeGyroDps = isfinite(imu.correctedGyDps) ? imu.correctedGyDps : 0.0f;
+  BalancePid::update(safePitchDeg, safeGyroDps, dtSeconds,
+                     balanceControlEnabled, !balanceControlEnabled);
+  shadowPidOutput = BalancePid::getOutput();
+  if (balanceControlEnabled) {
+    balancePwm = shadowPidOutput;
+    finalLeftPwm = shadowPidOutput;
+    finalRightPwm = shadowPidOutput;
+    MotorsTest::setLeftPwm(finalLeftPwm);
+    MotorsTest::setRightPwm(finalRightPwm);
+    strlcpy(shadowStatus, "PID ACTIVE", sizeof(shadowStatus));
+  } else {
+    balancePwm = 0;
+    finalLeftPwm = 0;
+    finalRightPwm = 0;
+    if (!benchTestActive) MotorsTest::disable();
+    if (blockReason != nullptr && !enableRejected) {
+      snprintf(shadowStatus, sizeof(shadowStatus), "PID blocked: %s", blockReason);
+    } else if (!enableRejected && strcmp(shadowStatus, "Boot") == 0) {
+      strlcpy(shadowStatus, "PID ready: disabled", sizeof(shadowStatus));
+    }
+  }
+}
+
 void fillSharedState() {
   const Imu6500Test::ImuSample imu = Imu6500Test::getSample();
   const RobotState previousState = SharedState::getState();
@@ -696,7 +1087,12 @@ void fillSharedState() {
   state.pidIntegralEnabled = BalancePid::isIntegralEnabled();
   state.pidOutputMin = BalancePid::getOutputMin();
   state.pidOutputMax = BalancePid::getOutputMax();
-  state.motorDeadzonePwm = BalancePid::getMotorDeadzonePwm();
+  state.motorLeftMinPwm = MotorsTest::getLeftMinPwm();
+  state.motorLeftMaxPwm = MotorsTest::getLeftMaxPwm();
+  state.motorRightMinPwm = MotorsTest::getRightMinPwm();
+  state.motorRightMaxPwm = MotorsTest::getRightMaxPwm();
+  state.motorLeftCompensation = MotorsTest::getLeftCompensation();
+  state.motorRightCompensation = MotorsTest::getRightCompensation();
   state.controlPeriodMs = Config::CONTROL_TASK_PERIOD_MS;
   state.imuReady = Imu6500Test::isReady();
   state.gyroCalibrated = imu.gyroCalibrated;
@@ -746,6 +1142,7 @@ void handleCommand(const RobotCommand &command) {
 
   if (command.updatePidTunings) {
     BalancePid::setTunings(command.pidKp, command.pidKi, command.pidKd);
+    ControlSettings::savePid(BalancePid::getKp(), BalancePid::getKi(), BalancePid::getKd());
   }
 
   if (command.updatePidSetpoint) {
@@ -757,8 +1154,12 @@ void handleCommand(const RobotCommand &command) {
     BalancePid::setOutputLimit(command.pidMaxPwm);
   }
 
-  if (command.updateMotorDeadzonePwm) {
-    BalancePid::setMotorDeadzonePwm(command.motorDeadzonePwm);
+  if (command.updateMotorPwmLimits) {
+    enterRecoveryWaiting("Motor limits updated");
+    ControlSettings::saveMotorConfig(command.motorLeftMinPwm, command.motorLeftMaxPwm,
+                                     command.motorRightMinPwm, command.motorRightMaxPwm,
+                                     command.motorLeftCompensation,
+                                     command.motorRightCompensation);
   }
 
   if (command.updateIntegralLimit) {
@@ -1002,16 +1403,54 @@ void begin() {
   Serial.print(F("RobotControl running on core "));
   Serial.println(xPortGetCoreID());
 
+  ControlSettings::begin(
+      Config::RAW_IMU_DASHBOARD_ONLY ? Config::SHADOW_PID_KP : Config::INITIAL_PID_KP,
+      Config::RAW_IMU_DASHBOARD_ONLY ? Config::SHADOW_PID_KI : Config::INITIAL_PID_KI,
+      Config::RAW_IMU_DASHBOARD_ONLY ? Config::SHADOW_PID_KD : Config::INITIAL_PID_KD,
+      Config::RAW_IMU_DASHBOARD_ONLY ? 0.0 : Config::INITIAL_ANGLE_SETPOINT_DEG,
+      Config::RAW_IMU_DASHBOARD_ONLY ? Config::SHADOW_PID_MAX_PWM : Config::INITIAL_PID_MAX_PWM);
+  const ControlSettings::Settings settings = ControlSettings::get();
   MotorsTest::begin();
+  if (Config::RAW_IMU_DASHBOARD_ONLY) {
+    motorsEnabled = false;
+    safetyStop = true;
+    safetyFault = true;
+    MotorsTest::disable();
+    EncodersTest::begin();
+    Imu9250::begin();
+    BalancePid::begin();
+    BalancePid::setTunings(settings.kp, settings.ki, settings.kd);
+    targetBalanceSetpointDeg = settings.setpoint;
+    BalancePid::setSetpoint(settings.setpoint);
+    BalancePid::setOutputLimit(settings.pidMaxPwm);
+    BalancePid::setIntegralEnabled(true);
+    previousControlMs = millis();
+    fillRawImuState();
+    Serial.println(F("Safe dashboard mode active: PID output blocked, bench tests require arming"));
+    return;
+  }
   EncodersTest::begin();
   Imu6500Test::begin();
   BalancePid::begin();
+  BalancePid::setTunings(settings.kp, settings.ki, settings.kd);
+  BalancePid::setOutputLimit(settings.pidMaxPwm);
   BalancePid::setSetpoint(manualAngleSetpointDeg);
   enterRecoveryWaiting("Waiting upright");
   fillSharedState();
 }
 
 void update() {
+  if (Config::RAW_IMU_DASHBOARD_ONLY) {
+    const RobotCommand command = SharedState::consumeCommand();
+    handleRawImuCommand(command);
+    Imu9250::update();
+    updateBenchTestSafety();
+    updateEncoderDiagnostics();
+    updateShadowControl();
+    fillRawImuState();
+    return;
+  }
+
   const RobotCommand command = SharedState::consumeCommand();
   handleCommand(command);
 

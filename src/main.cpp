@@ -1,6 +1,7 @@
 #include <Arduino.h>
 
 #include "config.h"
+#include "mpu9250_9dof_test.h"
 #include "robot_control.h"
 #include "shared_state.h"
 #include "web_debug.h"
@@ -30,6 +31,11 @@ void controlTask(void *parameter) {
 }  // namespace
 
 void setup() {
+  if (Config::RUN_MPU9250_TEST_DASHBOARD) {
+    Mpu9250NineAxisTest::begin();
+    return;
+  }
+
   Serial.begin(Config::SERIAL_BAUD_RATE);
   Serial.println();
   Serial.println(F("Booting Robot Balancin FreeRTOS firmware"));
@@ -54,5 +60,9 @@ void setup() {
 }
 
 void loop() {
+  if (Config::RUN_MPU9250_TEST_DASHBOARD) {
+    Mpu9250NineAxisTest::update();
+    return;
+  }
   vTaskDelay(portMAX_DELAY);
 }

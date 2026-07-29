@@ -25,7 +25,6 @@ double iTermLimit = Config::INITIAL_I_TERM_LIMIT;
 bool integralEnabled = true;
 int outputMin = -Config::INITIAL_PID_MAX_PWM;
 int outputMax = Config::INITIAL_PID_MAX_PWM;
-int motorDeadzonePwm = Config::INITIAL_MOTOR_DEADZONE_PWM;
 
 int clampMaxPwm(int maxPwm) {
   if (maxPwm < 0) {
@@ -35,16 +34,6 @@ int clampMaxPwm(int maxPwm) {
     maxPwm = Config::PWM_MAX_DUTY;
   }
   return maxPwm;
-}
-
-double applyMotorDeadzone(double output) {
-  if (output == 0.0 || motorDeadzonePwm <= 0) {
-    return output;
-  }
-  if (output > 0.0) {
-    return output + static_cast<double>(motorDeadzonePwm);
-  }
-  return output - static_cast<double>(motorDeadzonePwm);
 }
 
 }  // namespace
@@ -95,7 +84,6 @@ void update(float angleDeg, float gyroRateDegPerSec, float dtSeconds, bool motor
     output = -output;
   }
   outputBeforeLimit = output;
-  output = applyMotorDeadzone(output);
   pidOutput = constrain(output, static_cast<double>(outputMin), static_cast<double>(outputMax));
   outputAfterLimit = pidOutput;
 }
@@ -189,11 +177,8 @@ int getOutputMax() {
   return outputMax;
 }
 
-int getMotorDeadzonePwm() {
-  return motorDeadzonePwm;
-}
-
 void setTunings(double kp, double ki, double kd) {
+  if (ki != pidKi) resetIntegral();
   pidKp = constrain(kp, Config::PID_KP_MIN, Config::PID_KP_MAX);
   pidKi = constrain(ki, Config::PID_KI_MIN, Config::PID_KI_MAX);
   pidKd = constrain(kd, Config::PID_KD_MIN, Config::PID_KD_MAX);
@@ -208,11 +193,6 @@ void setOutputLimit(int maxPwm) {
   outputMin = -limit;
   outputMax = limit;
   pidOutput = constrain(pidOutput, static_cast<double>(outputMin), static_cast<double>(outputMax));
-}
-
-void setMotorDeadzonePwm(int pwm) {
-  motorDeadzonePwm = constrain(abs(pwm), Config::MOTOR_DEADZONE_PWM_MIN,
-                               Config::MOTOR_DEADZONE_PWM_MAX);
 }
 
 void setIntegralLimit(double limit) {

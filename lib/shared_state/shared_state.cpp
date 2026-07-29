@@ -52,6 +52,13 @@ RobotCommand consumeCommand() {
     robotCommand.resetEncoders = false;
     robotCommand.calibrateGyro = false;
     robotCommand.calibrateVertical = false;
+    robotCommand.startAccelCalibration = false;
+    robotCommand.captureAccelPose = false;
+    robotCommand.calibrateMagnetometer = false;
+    robotCommand.clearImuCalibration = false;
+    robotCommand.armBenchTest = false;
+    robotCommand.disarmBenchTest = false;
+    robotCommand.updateBenchTest = false;
     robotCommand.otaStart = false;
     robotCommand.otaEnd = false;
     robotCommand.testLeftMotor = false;
@@ -60,7 +67,7 @@ RobotCommand consumeCommand() {
     robotCommand.updatePidTunings = false;
     robotCommand.updatePidSetpoint = false;
     robotCommand.updatePidMaxPwm = false;
-    robotCommand.updateMotorDeadzonePwm = false;
+    robotCommand.updateMotorPwmLimits = false;
     robotCommand.updateIntegralLimit = false;
     robotCommand.updateITermLimit = false;
     robotCommand.updateIntegralEnabled = false;
@@ -84,7 +91,6 @@ void requestEnableMotors() {
   withLock([]() {
     robotCommand.enableMotors = true;
     robotCommand.disableMotors = false;
-    robotCommand.stopMotors = false;
   });
 }
 
@@ -126,6 +132,44 @@ void requestGyroCalibration() {
 
 void requestVerticalCalibration() {
   withLock([]() { robotCommand.calibrateVertical = true; });
+}
+
+void requestAccelCalibrationStart() {
+  withLock([]() { robotCommand.startAccelCalibration = true; });
+}
+
+void requestAccelPoseCapture() {
+  withLock([]() { robotCommand.captureAccelPose = true; });
+}
+
+void requestMagnetometerCalibration() {
+  withLock([]() { robotCommand.calibrateMagnetometer = true; });
+}
+
+void requestImuCalibrationClear() {
+  withLock([]() { robotCommand.clearImuCalibration = true; });
+}
+
+void requestBenchTestArm() {
+  withLock([]() { robotCommand.armBenchTest = true; });
+}
+
+void requestBenchTestDisarm() {
+  withLock([]() {
+    robotCommand.disarmBenchTest = true;
+    robotCommand.updateBenchTest = true;
+    robotCommand.benchLeftPwm = 0;
+    robotCommand.benchRightPwm = 0;
+  });
+}
+
+void requestBenchTestPwm(int leftPwm, int rightPwm) {
+  if (stateMutex != nullptr && xSemaphoreTake(stateMutex, portMAX_DELAY) == pdTRUE) {
+    robotCommand.updateBenchTest = true;
+    robotCommand.benchLeftPwm = leftPwm;
+    robotCommand.benchRightPwm = rightPwm;
+    xSemaphoreGive(stateMutex);
+  }
 }
 
 void requestOtaStart() {
@@ -207,10 +251,16 @@ void requestPidMaxPwm(int maxPwm) {
   }
 }
 
-void requestMotorDeadzonePwm(int pwm) {
+void requestMotorPwmLimits(int leftMinPwm, int leftMaxPwm, int rightMinPwm, int rightMaxPwm,
+                           double leftCompensation, double rightCompensation) {
   if (stateMutex != nullptr && xSemaphoreTake(stateMutex, portMAX_DELAY) == pdTRUE) {
-    robotCommand.motorDeadzonePwm = pwm;
-    robotCommand.updateMotorDeadzonePwm = true;
+    robotCommand.motorLeftMinPwm = leftMinPwm;
+    robotCommand.motorLeftMaxPwm = leftMaxPwm;
+    robotCommand.motorRightMinPwm = rightMinPwm;
+    robotCommand.motorRightMaxPwm = rightMaxPwm;
+    robotCommand.motorLeftCompensation = leftCompensation;
+    robotCommand.motorRightCompensation = rightCompensation;
+    robotCommand.updateMotorPwmLimits = true;
     xSemaphoreGive(stateMutex);
   }
 }

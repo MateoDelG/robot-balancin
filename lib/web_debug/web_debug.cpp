@@ -46,8 +46,89 @@ String stateAsJson() {
   doc["gx"] = state.correctedGx;
   doc["gy"] = state.correctedGy;
   doc["gz"] = state.correctedGz;
+  doc["rawImuMode"] = Config::RAW_IMU_DASHBOARD_ONLY;
+  doc["imuRawAxG"] = state.imuRawAxG;
+  doc["imuRawAyG"] = state.imuRawAyG;
+  doc["imuRawAzG"] = state.imuRawAzG;
+  doc["imuRawAccelNormG"] = state.imuRawAccelNormG;
+  doc["imuRawGxDps"] = state.imuRawGxDps;
+  doc["imuRawGyDps"] = state.imuRawGyDps;
+  doc["imuRawGzDps"] = state.imuRawGzDps;
+  doc["imuRawMx"] = state.imuRawMx;
+  doc["imuRawMy"] = state.imuRawMy;
+  doc["imuRawMz"] = state.imuRawMz;
+  doc["imuRawMagDirectionDeg"] = state.imuRawMagDirectionDeg;
+  doc["imuCorrectedAxG"] = state.imuCorrectedAxG;
+  doc["imuCorrectedAyG"] = state.imuCorrectedAyG;
+  doc["imuCorrectedAzG"] = state.imuCorrectedAzG;
+  doc["imuCorrectedGxDps"] = state.imuCorrectedGxDps;
+  doc["imuCorrectedGyDps"] = state.imuCorrectedGyDps;
+  doc["imuCorrectedGzDps"] = state.imuCorrectedGzDps;
+  doc["imuCorrectedMxUt"] = state.imuCorrectedMxUt;
+  doc["imuCorrectedMyUt"] = state.imuCorrectedMyUt;
+  doc["imuCorrectedMzUt"] = state.imuCorrectedMzUt;
+  doc["imuMagNormUt"] = state.imuMagNormUt;
+  doc["imuAccelRollDeg"] = state.imuAccelRollDeg;
+  doc["imuAccelPitchDeg"] = state.imuAccelPitchDeg;
+  doc["imuFilteredRollDeg"] = state.imuFilteredRollDeg;
+  doc["imuFilteredPitchDeg"] = state.imuFilteredPitchDeg;
+  doc["imuRelativeRollDeg"] = state.imuRelativeRollDeg;
+  doc["imuRelativePitchDeg"] = state.imuRelativePitchDeg;
+  doc["imuHeadingDeg"] = state.imuHeadingDeg;
+  doc["imuFilterAlpha"] = state.imuFilterAlpha;
+  doc["imuSampleAgeMs"] = state.imuSampleAgeMs;
+  JsonArray imuAccelOffset = doc["imuAccelOffset"].to<JsonArray>();
+  JsonArray imuAccelScale = doc["imuAccelScale"].to<JsonArray>();
+  JsonArray imuGyroOffset = doc["imuGyroOffset"].to<JsonArray>();
+  JsonArray imuMagOffset = doc["imuMagOffset"].to<JsonArray>();
+  JsonArray imuMagScale = doc["imuMagScale"].to<JsonArray>();
+  for (uint8_t axis = 0; axis < 3; ++axis) {
+    imuAccelOffset.add(state.imuAccelOffset[axis]);
+    imuAccelScale.add(state.imuAccelScale[axis]);
+    imuGyroOffset.add(state.imuGyroOffset[axis]);
+    imuMagOffset.add(state.imuMagOffset[axis]);
+    imuMagScale.add(state.imuMagScale[axis]);
+  }
+  doc["imuVerticalRollDeg"] = state.imuVerticalRollDeg;
+  doc["imuVerticalPitchDeg"] = state.imuVerticalPitchDeg;
+  doc["imuRawSampleRateHz"] = state.imuRawSampleRateHz;
+  doc["imuAccelRateHz"] = state.imuAccelRateHz;
+  doc["imuGyroRateHz"] = state.imuGyroRateHz;
+  doc["imuMagRateHz"] = state.imuMagRateHz;
+  doc["imuCalibrationSamples"] = state.imuCalibrationSamples;
+  doc["imuRawAddress"] = state.imuRawAddress;
+  doc["imuRawId"] = state.imuRawId;
+  doc["imuRawMagId"] = state.imuRawMagId;
+  doc["imuRawAccelReady"] = state.imuRawAccelReady;
+  doc["imuRawGyroReady"] = state.imuRawGyroReady;
+  doc["imuRawMagReady"] = state.imuRawMagReady;
+  doc["imuFilterReady"] = state.imuFilterReady;
+  doc["imuCalibrationStored"] = state.imuCalibrationStored;
+  doc["imuAccelCalibrated"] = state.imuAccelCalibrated;
+  doc["imuGyroCalibrated"] = state.imuGyroCalibrated;
+  doc["imuMagCalibrated"] = state.imuMagCalibrated;
+  doc["imuVerticalCalibrated"] = state.imuVerticalCalibrated;
+  doc["imuAccelWizardActive"] = state.imuAccelWizardActive;
+  doc["imuAccelPoseIndex"] = state.imuAccelPoseIndex;
+  doc["imuCalibrationMode"] = state.imuCalibrationMode;
+  doc["imuCalibrationStatus"] = state.imuCalibrationStatus;
+  doc["imuAccelPoseName"] = state.imuAccelPoseName;
+  doc["shadowControlReady"] = state.shadowControlReady;
+  doc["shadowPidOutput"] = state.shadowPidOutput;
+  doc["shadowDirection"] = state.shadowDirection;
+  doc["balanceControlEnabled"] = state.balanceControlEnabled;
+  doc["targetSetpoint"] = state.pidTargetSetpoint;
+  doc["controlSettingsSaved"] = state.controlSettingsSaved;
+  doc["controlSettingsMessage"] = state.controlSettingsMessage;
+  doc["benchTestArmed"] = state.benchTestArmed;
+  doc["benchTestActive"] = state.benchTestActive;
+  doc["benchArmRemainingMs"] = state.benchArmRemainingMs;
+  doc["benchWatchdogAgeMs"] = state.benchWatchdogAgeMs;
+  doc["benchTestCommand"] = state.benchTestCommand;
   doc["leftEncoder"] = state.correctedLeftEncoder;
   doc["rightEncoder"] = state.correctedRightEncoder;
+  doc["rawLeftEncoder"] = state.rawLeftEncoder;
+  doc["rawRightEncoder"] = state.rawRightEncoder;
   doc["leftSpeed"] = state.leftSpeed;
   doc["rightSpeed"] = state.rightSpeed;
   doc["speedAverage"] = state.speedAverage;
@@ -113,7 +194,12 @@ String stateAsJson() {
   doc["angleError"] = state.pidError;
   doc["pidMin"] = state.pidOutputMin;
   doc["maxPwm"] = state.pidOutputMax;
-  doc["motorDeadzonePwm"] = state.motorDeadzonePwm;
+  doc["motorLeftMinPwm"] = state.motorLeftMinPwm;
+  doc["motorLeftMaxPwm"] = state.motorLeftMaxPwm;
+  doc["motorRightMinPwm"] = state.motorRightMinPwm;
+  doc["motorRightMaxPwm"] = state.motorRightMaxPwm;
+  doc["motorLeftCompensation"] = state.motorLeftCompensation;
+  doc["motorRightCompensation"] = state.motorRightCompensation;
   doc["controlPeriodMs"] = state.controlPeriodMs;
   doc["motorsEnabled"] = state.motorsEnabled;
   doc["safetyStop"] = state.safetyStop;
@@ -170,6 +256,76 @@ void handleMessage(uint8_t clientId, const char *payload) {
   } else if (strcmp(type, "calibrate_vertical") == 0) {
     SharedState::requestVerticalCalibration();
     sendMessage(clientId, "ack", "vertical calibration requested");
+  } else if (strcmp(type, "start_accel_calibration") == 0) {
+    SharedState::requestAccelCalibrationStart();
+    sendMessage(clientId, "ack", "accelerometer wizard requested");
+  } else if (strcmp(type, "capture_accel_pose") == 0) {
+    SharedState::requestAccelPoseCapture();
+    sendMessage(clientId, "ack", "accelerometer pose capture requested");
+  } else if (strcmp(type, "calibrate_magnetometer") == 0) {
+    SharedState::requestMagnetometerCalibration();
+    sendMessage(clientId, "ack", "magnetometer calibration requested");
+  } else if (strcmp(type, "clear_imu_calibration") == 0) {
+    SharedState::requestImuCalibrationClear();
+    sendMessage(clientId, "ack", "IMU calibration clear requested");
+  } else if (strcmp(type, "set_shadow_pid") == 0) {
+    if (!requireNumber(doc, "kp") || !requireNumber(doc, "ki") || !requireNumber(doc, "kd")) {
+      sendMessage(clientId, "error", "invalid shadow PID values");
+      return;
+    }
+    const double kp = clampValue(doc["kp"].as<double>(), Config::PID_KP_MIN, Config::PID_KP_MAX);
+    const double ki = clampValue(doc["ki"].as<double>(), Config::PID_KI_MIN, Config::PID_KI_MAX);
+    const double kd = clampValue(doc["kd"].as<double>(), Config::PID_KD_MIN, Config::PID_KD_MAX);
+    SharedState::requestPidTunings(kp, ki, kd);
+    sendMessage(clientId, "ack", "shadow PID update requested");
+  } else if (strcmp(type, "set_motor_pwm_limits") == 0) {
+    if (!requireNumber(doc, "leftMin") || !requireNumber(doc, "leftMax") ||
+        !requireNumber(doc, "rightMin") || !requireNumber(doc, "rightMax") ||
+        !requireNumber(doc, "leftCompensation") ||
+        !requireNumber(doc, "rightCompensation")) {
+      sendMessage(clientId, "error", "invalid motor PWM limits");
+      return;
+    }
+    const int leftMin = clampValue(doc["leftMin"].as<int>(), Config::MOTOR_PWM_LIMIT_MIN,
+                                   Config::MOTOR_PWM_LIMIT_MAX);
+    const int leftMax = clampValue(doc["leftMax"].as<int>(), Config::MOTOR_PWM_LIMIT_MIN,
+                                   Config::MOTOR_PWM_LIMIT_MAX);
+    const int rightMin = clampValue(doc["rightMin"].as<int>(), Config::MOTOR_PWM_LIMIT_MIN,
+                                    Config::MOTOR_PWM_LIMIT_MAX);
+    const int rightMax = clampValue(doc["rightMax"].as<int>(), Config::MOTOR_PWM_LIMIT_MIN,
+                                    Config::MOTOR_PWM_LIMIT_MAX);
+    const double leftCompensation = clampValue(doc["leftCompensation"].as<double>(),
+                                                Config::MOTOR_COMPENSATION_MIN,
+                                                Config::MOTOR_COMPENSATION_MAX);
+    const double rightCompensation = clampValue(doc["rightCompensation"].as<double>(),
+                                                 Config::MOTOR_COMPENSATION_MIN,
+                                                 Config::MOTOR_COMPENSATION_MAX);
+    if (leftMin > leftMax || rightMin > rightMax) {
+      sendMessage(clientId, "error", "motor PWM minimum cannot exceed maximum");
+      return;
+    }
+    SharedState::requestMotorPwmLimits(leftMin, leftMax, rightMin, rightMax,
+                                       leftCompensation, rightCompensation);
+    sendMessage(clientId, "ack", "motor PWM limits update requested");
+  } else if (strcmp(type, "bench_arm") == 0) {
+    SharedState::requestBenchTestArm();
+    sendMessage(clientId, "ack", "bench test arm requested");
+  } else if (strcmp(type, "bench_disarm") == 0) {
+    SharedState::requestBenchTestDisarm();
+    sendMessage(clientId, "ack", "bench test disarmed");
+  } else if (strcmp(type, "bench_stop") == 0) {
+    SharedState::requestBenchTestPwm(0, 0);
+    sendMessage(clientId, "ack", "bench motors stopped");
+  } else if (strcmp(type, "bench_drive") == 0) {
+    if (!requireNumber(doc, "leftPwm") || !requireNumber(doc, "rightPwm")) {
+      sendMessage(clientId, "error", "invalid bench PWM");
+      return;
+    }
+    const int leftPwm = clampValue(doc["leftPwm"].as<int>(), -Config::BENCH_TEST_MAX_PWM,
+                                   Config::BENCH_TEST_MAX_PWM);
+    const int rightPwm = clampValue(doc["rightPwm"].as<int>(), -Config::BENCH_TEST_MAX_PWM,
+                                    Config::BENCH_TEST_MAX_PWM);
+    SharedState::requestBenchTestPwm(leftPwm, rightPwm);
   } else if (strcmp(type, "test_left_motor") == 0) {
     SharedState::requestLeftMotorTest();
     sendMessage(clientId, "ack", "left motor test requested");
@@ -225,16 +381,6 @@ void handleMessage(uint8_t clientId, const char *payload) {
   } else if (strcmp(type, "reset_integral") == 0) {
     SharedState::requestIntegralReset();
     sendMessage(clientId, "ack", "integral reset requested");
-  } else if (strcmp(type, "set_motor_deadzone") == 0) {
-    if (!requireNumber(doc, "deadzonePwm")) {
-      sendMessage(clientId, "error", "invalid motor deadzone");
-      return;
-    }
-    const int deadzonePwm = clampValue(doc["deadzonePwm"].as<int>(),
-                                       Config::MOTOR_DEADZONE_PWM_MIN,
-                                       Config::MOTOR_DEADZONE_PWM_MAX);
-    SharedState::requestMotorDeadzonePwm(deadzonePwm);
-    sendMessage(clientId, "ack", "motor deadzone updated");
   } else if (strcmp(type, "enable_encoder_sync") == 0) {
     const bool enabled = doc["enabled"] | false;
     SharedState::requestEncoderSyncEnabled(enabled);
@@ -332,7 +478,7 @@ const char PAGE[] PROGMEM = R"rawliteral(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Robot Balancin PID Basico</title>
+  <title>Robot Balancin - Sensor MPU9250</title>
   <style>
     body{font-family:Arial,sans-serif;margin:0;background:#111827;color:#e5e7eb}
     header{padding:16px 20px;background:#020617;border-bottom:1px solid #334155}
@@ -345,12 +491,15 @@ const char PAGE[] PROGMEM = R"rawliteral(
     .drive-pad{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;align-items:center}.drive-pad button{width:100%;min-height:46px;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:none}.drive-stop{grid-column:2;background:#dc2626}.drive-forward{grid-column:2}.drive-left{grid-column:1}.drive-right{grid-column:3}.drive-back{grid-column:2}
     input,select{width:100%;box-sizing:border-box;margin:4px 0 8px;padding:8px;border-radius:6px;border:1px solid #4b5563;background:#0f172a;color:#e5e7eb}
     button{margin:4px 4px 4px 0;padding:9px 11px;border:0;border-radius:8px;background:#2563eb;color:white;font-weight:700;cursor:pointer}
+    button:disabled{opacity:.4;cursor:not-allowed}
     button.stop{background:#dc2626}.ok{background:#16a34a}.warn{background:#ca8a04}
     #status{color:#93c5fd;font-size:13px}.fault{color:#fca5a5}
+    .sensor-mode section:not(.sensor-section){display:none}.sensor-mode main{grid-template-columns:repeat(auto-fit,minmax(360px,1fr))}
+    .sensor-status{padding:10px;background:#0f172a;border-radius:8px;color:#fbbf24;min-height:20px}.cal-values{white-space:pre-line;font:12px Consolas,monospace;color:#9ca3af;line-height:1.5}.wide{grid-column:1/-1}
   </style>
 </head>
 <body>
-<header><h1>Robot Balancin - PID manual basico</h1><div id="status">Conectando...</div></header>
+<header><h1 id="pageTitle">Robot Balancin - Sensor MPU9250</h1><div id="status">Conectando...</div></header>
 <main>
   <section><h2>Estado</h2><div class="grid">
     <div class="item"><div class="label">Angulo</div><div class="value" id="angle">--</div></div>
@@ -364,6 +513,117 @@ const char PAGE[] PROGMEM = R"rawliteral(
     <div class="item"><div class="label">Auto recovery</div><div class="value" id="autoRecoveryState">--</div></div>
     <div class="item"><div class="label">Stable ms</div><div class="value" id="autoRecoveryStableMs">--</div></div>
   </div><p class="fault" id="faultMessage">--</p></section>
+  <section class="sensor-section wide"><h2>Angulo de inclinacion</h2>
+    <div class="grid">
+      <div class="item"><div class="label">Roll acelerometro</div><div class="value" id="imuAccelRollDeg">--</div></div>
+      <div class="item"><div class="label">Roll filtrado</div><div class="value" id="imuFilteredRollDeg">--</div></div>
+      <div class="item"><div class="label">Roll relativo vertical</div><div class="value" id="imuRelativeRollDeg">--</div></div>
+      <div class="item"><div class="label">Velocidad GX</div><div class="value" id="imuCorrectedGxDps">--</div></div>
+      <div class="item"><div class="label">Pitch acelerometro</div><div class="value" id="imuAccelPitchDeg">--</div></div>
+      <div class="item"><div class="label">Pitch filtrado</div><div class="value" id="imuFilteredPitchDeg">--</div></div>
+      <div class="item"><div class="label">Pitch relativo vertical</div><div class="value" id="imuRelativePitchDeg">--</div></div>
+      <div class="item"><div class="label">Rumbo compensado</div><div class="value" id="imuHeadingDeg">--</div></div>
+    </div>
+    <p>La entrada de equilibrio es <b>pitch relativo</b> con velocidad <b>GY</b>. Los motores solo reciben la salida cuando el PID se activa explicitamente.</p>
+  </section>
+  <section class="sensor-section wide"><h2>Control de equilibrio PID</h2>
+    <div class="sensor-status" id="shadowStatus">Esperando estado</div>
+    <div class="grid">
+      <div class="item"><div class="label">Pitch relativo</div><div class="value" id="shadowPitch">--</div></div>
+      <div class="item"><div class="label">GY corregido</div><div class="value" id="shadowGyro">--</div></div>
+      <div class="item"><div class="label">Error</div><div class="value" id="shadowError">--</div></div>
+      <div class="item"><div class="label">Termino P</div><div class="value" id="shadowP">--</div></div>
+      <div class="item"><div class="label">Termino I</div><div class="value" id="shadowI">--</div></div>
+      <div class="item"><div class="label">Termino D</div><div class="value" id="shadowD">--</div></div>
+      <div class="item"><div class="label">PWM teorico</div><div class="value" id="shadowOutput">--</div></div>
+      <div class="item"><div class="label">Direccion teorica</div><div class="value" id="shadowDirection">--</div></div>
+      <div class="item"><div class="label">PWM fisico L/R</div><div class="value"><span id="shadowLeftPwm">--</span>/<span id="shadowRightPwm">--</span></div></div>
+      <div class="item"><div class="label">Edad muestra</div><div class="value"><span id="shadowSampleAge">--</span> ms</div></div>
+      <div class="item"><div class="label">Alpha</div><div class="value" id="shadowAlpha">--</div></div>
+      <div class="item"><div class="label">Setpoint aplicado</div><div class="value" id="shadowAppliedSetpoint">--</div></div>
+      <div class="item"><div class="label">Persistencia</div><div class="value" id="controlSettingsStatus">--</div></div>
+    </div>
+    <div class="grid" style="margin-top:12px"><label>Kp<input id="shadowKp" type="number" step="0.1" min="0"></label><label>Ki<input id="shadowKi" type="number" step="0.01" min="0"></label><label>Kd<input id="shadowKd" type="number" step="0.01" min="0"></label></div>
+    <button onclick="applyShadowPid()">Guardar PID sombra</button>
+    <div class="grid" style="margin-top:12px"><label>Setpoint objetivo (-10 a 10)<input id="shadowSetpoint" type="number" step="0.01" min="-10" max="10"></label><label>Maximo PID (0-255)<input id="shadowMaxPwm" type="number" step="1" min="0" max="255"></label></div>
+    <button onclick="applyShadowControl()">Guardar setpoint y maximo PID</button>
+    <div class="actions"><button class="ok" onclick="enableBalance()">ACTIVAR PID</button><button class="warn" onclick="disableBalance()">Desactivar PID</button><button class="stop" onclick="stopBalance()">STOP</button></div>
+    <p>El setpoint se aplica con rampa. Activar requiere el robot cerca del setpoint. Cambiar PID, setpoint o limites desactiva el control. El PID continua activo si se desconecta el dashboard y solo se detiene con STOP o una falla local.</p>
+    <p><b>Advertencia:</b> 255 PWM permite potencia completa.</p>
+  </section>
+  <section class="sensor-section wide"><h2>Prueba de banco: motores y encoders</h2>
+    <div class="sensor-status" id="benchStatus">DESARMADA</div>
+    <p><label><input id="benchConfirm" type="checkbox"> Confirmo que el robot esta firmemente soportado y las ruedas estan suspendidas.</label></p>
+    <div class="grid">
+      <label>PWM de prueba (0-255)<input id="benchPwm" type="number" min="0" max="255" step="1" value="70"></label>
+      <div class="item"><div class="label">Armado restante</div><div class="value"><span id="benchRemaining">0</span> s</div></div>
+      <div class="item"><div class="label">Watchdog</div><div class="value"><span id="benchWatchdog">0</span> ms</div></div>
+      <div class="item"><div class="label">Comando</div><div class="value" id="benchCommand">stopped</div></div>
+      <div class="item"><div class="label">PWM real L/R</div><div class="value"><span id="benchLeftPwm">0</span>/<span id="benchRightPwm">0</span></div></div>
+      <div class="item"><div class="label">Velocidad L/R</div><div class="value"><span id="benchLeftSpeed">0</span>/<span id="benchRightSpeed">0</span></div></div>
+      <div class="item"><div class="label">Encoder crudo L/R</div><div class="value"><span id="benchRawLeft">0</span>/<span id="benchRawRight">0</span></div></div>
+      <div class="item"><div class="label">Encoder corregido L/R</div><div class="value"><span id="benchCorrectedLeft">0</span>/<span id="benchCorrectedRight">0</span></div></div>
+    </div>
+    <div class="actions"><button id="benchArm" class="warn">Armar 30 s</button><button id="benchDisarm">Desarmar</button><button id="benchStop" class="stop">PARADA</button><button onclick="send({type:'reset_encoders'})">Poner encoders en 0</button></div>
+    <div class="actions"><button class="bench-drive" id="benchLeftPositive">Izquierdo +</button><button class="bench-drive" id="benchLeftNegative">Izquierdo -</button><button class="bench-drive" id="benchRightPositive">Derecho +</button><button class="bench-drive" id="benchRightNegative">Derecho -</button><button class="bench-drive" id="benchBothPositive">Ambos +</button><button class="bench-drive" id="benchBothNegative">Ambos -</button></div>
+    <p>Los motores funcionan solo mientras se mantiene presionado. Soltar, perder WebSocket o dejar de enviar heartbeat detiene inmediatamente la salida.</p>
+  </section>
+  <section class="sensor-section wide"><h2>Limites PWM por motor</h2>
+    <p>Todo comando no cero inferior al minimo se eleva al minimo. El maximo satura la salida. Guardar desarma la prueba de banco.</p>
+    <div class="grid">
+      <label>Izquierdo minimo<input id="motorLeftMinPwm" type="number" min="0" max="255" step="1"></label>
+      <label>Izquierdo maximo<input id="motorLeftMaxPwm" type="number" min="0" max="255" step="1"></label>
+      <label>Derecho minimo<input id="motorRightMinPwm" type="number" min="0" max="255" step="1"></label>
+      <label>Derecho maximo<input id="motorRightMaxPwm" type="number" min="0" max="255" step="1"></label>
+      <label>Compensacion izquierda<input id="motorLeftCompensation" type="number" min="0" max="2" step="0.01"></label>
+      <label>Compensacion derecha<input id="motorRightCompensation" type="number" min="0" max="2" step="0.01"></label>
+    </div>
+    <button onclick="applyMotorLimits()">Guardar limites PWM</button>
+    <p>La salida de cada motor se multiplica por su compensacion antes de aplicar minimo y maximo. La prueba de banco permite hasta 255 PWM.</p>
+  </section>
+  <section class="sensor-section"><h2>Acelerometro</h2><div class="grid">
+    <div class="item"><div class="label">AX crudo / corregido</div><div class="value"><span id="imuRawAxG">--</span> / <span id="imuCorrectedAxG">--</span></div></div>
+    <div class="item"><div class="label">AY crudo / corregido</div><div class="value"><span id="imuRawAyG">--</span> / <span id="imuCorrectedAyG">--</span></div></div>
+    <div class="item"><div class="label">AZ crudo / corregido</div><div class="value"><span id="imuRawAzG">--</span> / <span id="imuCorrectedAzG">--</span></div></div>
+    <div class="item"><div class="label">Norma corregida</div><div class="value" id="imuRawAccelNormG">--</div></div>
+    <div class="item"><div class="label">Frecuencia</div><div class="value"><span id="imuAccelRateHz">--</span> Hz</div></div>
+    <div class="item"><div class="label">Calibracion</div><div class="value" id="imuAccelCalibrated">--</div></div>
+  </div></section>
+  <section class="sensor-section"><h2>Giroscopio</h2><div class="grid">
+    <div class="item"><div class="label">GX crudo / corregido</div><div class="value"><span id="imuRawGxDps">--</span> / <span id="imuCorrectedGxDpsValue">--</span></div></div>
+    <div class="item"><div class="label">GY crudo / corregido</div><div class="value"><span id="imuRawGyDps">--</span> / <span id="imuCorrectedGyDps">--</span></div></div>
+    <div class="item"><div class="label">GZ crudo / corregido</div><div class="value"><span id="imuRawGzDps">--</span> / <span id="imuCorrectedGzDps">--</span></div></div>
+    <div class="item"><div class="label">Frecuencia</div><div class="value"><span id="imuGyroRateHz">--</span> Hz</div></div>
+    <div class="item"><div class="label">Calibracion</div><div class="value" id="imuGyroCalibrated">--</div></div>
+  </div></section>
+  <section class="sensor-section"><h2>Magnetometro</h2><div class="grid">
+    <div class="item"><div class="label">MX crudo / corregido uT</div><div class="value"><span id="imuRawMx">--</span> / <span id="imuCorrectedMxUt">--</span></div></div>
+    <div class="item"><div class="label">MY crudo / corregido uT</div><div class="value"><span id="imuRawMy">--</span> / <span id="imuCorrectedMyUt">--</span></div></div>
+    <div class="item"><div class="label">MZ crudo / corregido uT</div><div class="value"><span id="imuRawMz">--</span> / <span id="imuCorrectedMzUt">--</span></div></div>
+    <div class="item"><div class="label">Norma magnetica</div><div class="value" id="imuMagNormUt">--</div></div>
+    <div class="item"><div class="label">Frecuencia</div><div class="value"><span id="imuMagRateHz">--</span> Hz</div></div>
+    <div class="item"><div class="label">Calibracion</div><div class="value" id="imuMagCalibrated">--</div></div>
+  </div></section>
+  <section class="sensor-section"><h2>Calibraciones persistentes</h2>
+    <div class="sensor-status" id="imuCalibrationStatus">Esperando estado</div>
+    <p>Modo: <b id="imuCalibrationMode">--</b> | muestras: <b id="imuCalibrationSamples">0</b> | NVS: <b id="imuCalibrationStored">--</b></p>
+    <button id="sensorGyroCal" onclick="send({type:'calibrate_gyro'})">Calibrar gyro 3 s</button>
+    <button id="sensorMagCal" onclick="send({type:'calibrate_magnetometer'})">Calibrar magnetometro 30 s</button>
+    <button id="sensorVerticalCal" onclick="send({type:'calibrate_vertical'})">Guardar vertical</button><br>
+    <button id="sensorAccelStart" onclick="send({type:'start_accel_calibration'})">Iniciar acelerometro 6 posiciones</button>
+    <button id="sensorAccelCapture" onclick="send({type:'capture_accel_pose'})">Capturar posicion</button>
+    <p>Posicion: <b id="imuAccelPose">No iniciado</b></p>
+    <button class="warn" id="sensorClearCal" onclick="send({type:'clear_imu_calibration'})">Borrar calibracion NVS</button>
+  </section>
+  <section class="sensor-section"><h2>Parametros guardados</h2><div id="imuCalibrationValues" class="cal-values">--</div></section>
+  <section class="sensor-section"><h2>Diagnostico MPU9250</h2><div class="grid">
+    <div class="item"><div class="label">Direccion I2C</div><div class="value" id="imuRawAddress">--</div></div>
+    <div class="item"><div class="label">MPU ID</div><div class="value" id="imuRawId">--</div></div>
+    <div class="item"><div class="label">AK8963 ID</div><div class="value" id="imuRawMagId">--</div></div>
+    <div class="item"><div class="label">Estado A/G/M</div><div class="value" id="imuRawReady">--</div></div>
+    <div class="item"><div class="label">Filtro</div><div class="value" id="imuFilterReady">--</div></div>
+    <div class="item"><div class="label">Vertical</div><div class="value" id="imuVerticalCalibrated">--</div></div>
+  </div></section>
   <section><h2>PID</h2><div class="grid">
     <div class="item"><div class="label">Error</div><div class="value" id="pidError">--</div></div>
     <div class="item"><div class="label">Output</div><div class="value" id="pidOutput">--</div></div>
@@ -393,13 +653,6 @@ const char PAGE[] PROGMEM = R"rawliteral(
     <button class="ok" onclick="send({type:'enable_integral',enabled:true})">Habilitar integral</button>
     <button class="warn" onclick="send({type:'enable_integral',enabled:false})">Deshabilitar integral</button>
     <button onclick="send({type:'reset_integral'})">Reset integral</button>
-  </section>
-  <section><h2>Zona muerta motores</h2>
-    <p>Se suma a la salida PID no cero para saltar el rango donde los motores no responden.</p>
-    <label>Zona muerta PWM</label><input id="motorDeadzonePwm" type="number" step="1">
-    <button onclick="applyMotorDeadzone()">Actualizar zona muerta</button>
-    <div class="item"><div class="label">PID puro</div><div class="value" id="outputBeforeLimit">--</div></div>
-    <div class="item"><div class="label">PID compensado</div><div class="value" id="outputAfterLimit">--</div></div>
   </section>
   <section><h2>Comandos</h2>
     <button class="ok" onclick="send({type:'enable_motors'})">Habilitar motores</button>
@@ -510,18 +763,26 @@ let ws;
 let pidDirty = false;
 let setpointDirty = false;
 let pwmDirty = false;
-let deadzoneDirty = false;
+let motorLimitsDirty = false;
 let integralLimitDirty = false;
 let iTermLimitDirty = false;
 let encoderSyncDirty = false;
 let encoderSyncTargetDirty = false;
 let gyroZHoldDirty = false;
 let speedHoldDirty = false;
+let shadowPidDirty = false;
+let shadowSetpointDirty = false;
+let shadowMaxPwmDirty = false;
 let driveTimer = null;
+let benchTimer = null;
+let benchArmed = false;
+let benchLeftCommand = 0;
+let benchRightCommand = 0;
 let driveForwardCommand = 0;
 let driveTurnCommand = 0;
 function num(id){return Number(document.getElementById(id).value)}
 function setText(id,value,digits=2){const el=document.getElementById(id); if(!el)return; el.textContent=typeof value==='number'?value.toFixed(digits):value;}
+function hexByte(value){if(typeof value!=='number' || value===0)return '--'; return '0x'+value.toString(16).padStart(2,'0').toUpperCase();}
 function setInput(id,value,digits=3,dirty=false){const el=document.getElementById(id); if(!el || dirty || document.activeElement===el || typeof value!=='number')return; el.value=value.toFixed(digits);}
 function setTurnDirection(direction){
   const el=document.getElementById('turnDirection');
@@ -530,6 +791,23 @@ function setTurnDirection(direction){
   el.className='value '+(direction==='derecha'?'turn-right':(direction==='izquierda'?'turn-left':'turn-still'));
 }
 function send(obj){if(!ws || ws.readyState!==WebSocket.OPEN){alert('WebSocket no conectado');return;} ws.send(JSON.stringify(obj));}
+function benchPwm(){return Math.min(255,Math.max(0,Math.round(num('benchPwm')||0)));}
+function sendBenchHeartbeat(){if(ws&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify({type:'bench_drive',leftPwm:benchLeftCommand,rightPwm:benchRightCommand}));}
+function stopBench(){if(benchTimer){clearInterval(benchTimer);benchTimer=null;}benchLeftCommand=0;benchRightCommand=0;if(ws&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify({type:'bench_stop'}));}
+function startBench(leftSign,rightSign){
+  stopBench();
+  if(!benchArmed)return;
+  const pwm=benchPwm();
+  if(pwm<=0)return;
+  benchLeftCommand=leftSign*pwm;benchRightCommand=rightSign*pwm;
+  sendBenchHeartbeat();
+  benchTimer=setInterval(sendBenchHeartbeat,100);
+}
+function bindBenchButton(id,leftSign,rightSign){
+  const button=document.getElementById(id);
+  button.addEventListener('pointerdown',event=>{event.preventDefault();button.setPointerCapture(event.pointerId);startBench(leftSign,rightSign)});
+  button.addEventListener('pointerup',stopBench);button.addEventListener('pointercancel',stopBench);button.addEventListener('pointerleave',stopBench);
+}
 function sendDrive(forward,turn){if(ws && ws.readyState===WebSocket.OPEN){ws.send(JSON.stringify({type:'drive',forward,turn}));}}
 function stopDrive(){if(driveTimer){clearInterval(driveTimer);driveTimer=null;} driveForwardCommand=0; driveTurnCommand=0; sendDrive(0,0);}
 function startDrive(forward,turn){stopDrive(); driveForwardCommand=forward; driveTurnCommand=turn; sendDrive(forward,turn); driveTimer=setInterval(()=>sendDrive(driveForwardCommand,driveTurnCommand),100);}
@@ -541,9 +819,18 @@ function bindDriveButton(id,forward,turn){
   button.addEventListener('pointerleave',stopDrive);
 }
 function applyPid(){send({type:'set_pid',kp:num('kp'),ki:num('ki'),kd:num('kd')}); pidDirty=false;}
+function applyShadowPid(){send({type:'set_shadow_pid',kp:num('shadowKp'),ki:num('shadowKi'),kd:num('shadowKd')}); shadowPidDirty=false;}
+function applyShadowControl(){send({type:'set_setpoint',setpoint:num('shadowSetpoint')});send({type:'set_pwm_limit',maxPwm:num('shadowMaxPwm')});shadowSetpointDirty=false;shadowMaxPwmDirty=false;}
+function enableBalance(){send({type:'enable_motors'});}
+function disableBalance(){send({type:'disable_motors'});}
+function stopBalance(){stopBench();send({type:'stop'});}
 function applySetpoint(){send({type:'set_setpoint',setpoint:num('setpoint')}); setpointDirty=false;}
 function applyPwmLimit(){send({type:'set_pwm_limit',maxPwm:num('maxPwm')}); pwmDirty=false;}
-function applyMotorDeadzone(){send({type:'set_motor_deadzone',deadzonePwm:num('motorDeadzonePwm')}); deadzoneDirty=false;}
+function applyMotorLimits(){
+  const leftMin=Math.round(num('motorLeftMinPwm')),leftMax=Math.round(num('motorLeftMaxPwm')),rightMin=Math.round(num('motorRightMinPwm')),rightMax=Math.round(num('motorRightMaxPwm')),leftCompensation=num('motorLeftCompensation'),rightCompensation=num('motorRightCompensation');
+  if(leftMin>leftMax || rightMin>rightMax){alert('El PWM minimo no puede superar el maximo.');return;}
+  send({type:'set_motor_pwm_limits',leftMin,leftMax,rightMin,rightMax,leftCompensation,rightCompensation});motorLimitsDirty=false;
+}
 function applyIntegralLimit(){send({type:'set_integral_limit',integralLimit:num('integralLimit')}); integralLimitDirty=false;}
 function applyITermLimit(){send({type:'set_i_term_limit',iTermLimit:num('iTermLimit')}); iTermLimitDirty=false;}
 function applyEncoderSync(){send({type:'set_encoder_sync',kp:num('encoderSyncKp'),deadband:num('encoderSyncDeadband'),maxCorrection:num('encoderSyncMaxCorrection')}); encoderSyncDirty=false;}
@@ -566,12 +853,15 @@ function markDirty(){
   ['kp','ki','kd'].forEach(id=>document.getElementById(id).addEventListener('input',()=>pidDirty=true));
   document.getElementById('setpoint').addEventListener('input',()=>setpointDirty=true);
   document.getElementById('maxPwm').addEventListener('input',()=>pwmDirty=true);
-  document.getElementById('motorDeadzonePwm').addEventListener('input',()=>deadzoneDirty=true);
+  ['motorLeftMinPwm','motorLeftMaxPwm','motorRightMinPwm','motorRightMaxPwm','motorLeftCompensation','motorRightCompensation'].forEach(id=>document.getElementById(id).addEventListener('input',()=>motorLimitsDirty=true));
   document.getElementById('integralLimit').addEventListener('input',()=>integralLimitDirty=true);
   document.getElementById('iTermLimit').addEventListener('input',()=>iTermLimitDirty=true);
   ['encoderSyncKp','encoderSyncDeadband','encoderSyncMaxCorrection'].forEach(id=>document.getElementById(id).addEventListener('input',()=>encoderSyncDirty=true));
   ['gyroZHoldKp','gyroZHoldMaxCorrection'].forEach(id=>document.getElementById(id).addEventListener('input',()=>gyroZHoldDirty=true));
   ['speedHoldKp','speedHoldMaxAngle'].forEach(id=>document.getElementById(id).addEventListener('input',()=>speedHoldDirty=true));
+  ['shadowKp','shadowKi','shadowKd'].forEach(id=>document.getElementById(id).addEventListener('input',()=>shadowPidDirty=true));
+  document.getElementById('shadowSetpoint').addEventListener('input',()=>shadowSetpointDirty=true);
+  document.getElementById('shadowMaxPwm').addEventListener('input',()=>shadowMaxPwmDirty=true);
   bindDriveButton('driveForward',1,0);
   bindDriveButton('driveBack',-1,0);
   bindDriveButton('driveLeft',0,-1);
@@ -583,11 +873,28 @@ function markDirty(){
 function connect(){
   ws=new WebSocket('ws://'+location.hostname+':81/');
   ws.onopen=()=>setText('status','WebSocket conectado',0);
-  ws.onclose=()=>{setText('status','WebSocket desconectado',0); setTimeout(connect,1000);};
+  ws.onclose=()=>{stopBench();setText('status','WebSocket desconectado',0); setTimeout(connect,1000);};
   ws.onmessage=(event)=>{
     const data=JSON.parse(event.data);
     if(data.type==='ack' || data.type==='error'){setText('status',data.message,0); console.log(data);return;}
+    document.body.classList.toggle('sensor-mode',data.rawImuMode);
+    if(data.rawImuMode)setText('pageTitle','Robot Balancin - Control sombra MPU9250',0);
     setText('angle',data.selectedAngle); setText('gyroRate',data.gyroRate); setTurnDirection(data.turnDirection); setText('turnRate',data.turnRate); setText('gyroZHoldTurnRate',data.turnRate); setText('leftPwm',data.leftPwm,0); setText('rightPwm',data.rightPwm,0);
+    setText('imuRawAxG',data.imuRawAxG,3); setText('imuRawAyG',data.imuRawAyG,3); setText('imuRawAzG',data.imuRawAzG,3); setText('imuRawAccelNormG',data.imuRawAccelNormG,3);
+    setText('imuRawGxDps',data.imuRawGxDps,2); setText('imuRawGyDps',data.imuRawGyDps,2); setText('imuRawGzDps',data.imuRawGzDps,2);
+    setText('imuRawMx',data.imuRawMagReady?data.imuRawMx:'N/A',1); setText('imuRawMy',data.imuRawMagReady?data.imuRawMy:'N/A',1); setText('imuRawMz',data.imuRawMagReady?data.imuRawMz:'N/A',1);
+    setText('imuRawAddress',hexByte(data.imuRawAddress),0); setText('imuRawId',hexByte(data.imuRawId),0); setText('imuRawMagId',hexByte(data.imuRawMagId),0); setText('imuRawReady',(data.imuRawAccelReady?'A':'-')+'/'+(data.imuRawGyroReady?'G':'-')+'/'+(data.imuRawMagReady?'M':'-'),0);
+    setText('imuCorrectedAxG',data.imuCorrectedAxG,3);setText('imuCorrectedAyG',data.imuCorrectedAyG,3);setText('imuCorrectedAzG',data.imuCorrectedAzG,3);
+    setText('imuCorrectedGxDps',data.imuCorrectedGxDps,2);setText('imuCorrectedGxDpsValue',data.imuCorrectedGxDps,2);setText('imuCorrectedGyDps',data.imuCorrectedGyDps,2);setText('imuCorrectedGzDps',data.imuCorrectedGzDps,2);
+    setText('imuCorrectedMxUt',data.imuCorrectedMxUt,2);setText('imuCorrectedMyUt',data.imuCorrectedMyUt,2);setText('imuCorrectedMzUt',data.imuCorrectedMzUt,2);setText('imuMagNormUt',data.imuMagNormUt,2);
+    setText('imuAccelRollDeg',data.imuAccelRollDeg,2);setText('imuAccelPitchDeg',data.imuAccelPitchDeg,2);setText('imuFilteredRollDeg',data.imuFilteredRollDeg,2);setText('imuFilteredPitchDeg',data.imuFilteredPitchDeg,2);setText('imuRelativeRollDeg',data.imuRelativeRollDeg,2);setText('imuRelativePitchDeg',data.imuRelativePitchDeg,2);setText('imuHeadingDeg',data.imuHeadingDeg,1);
+    setText('imuAccelRateHz',data.imuAccelRateHz,0);setText('imuGyroRateHz',data.imuGyroRateHz,0);setText('imuMagRateHz',data.imuMagRateHz,0);
+    setText('imuAccelCalibrated',data.imuAccelCalibrated?'VALIDA':'PENDIENTE',0);setText('imuGyroCalibrated',data.imuGyroCalibrated?'VALIDA':'PENDIENTE',0);setText('imuMagCalibrated',data.imuMagCalibrated?'VALIDA':'PENDIENTE',0);setText('imuVerticalCalibrated',data.imuVerticalCalibrated?'VALIDA':'PENDIENTE',0);setText('imuFilterReady',data.imuFilterReady?'LISTO':'NO',0);
+    setText('imuCalibrationStatus',data.imuCalibrationStatus,0);setText('imuCalibrationMode',data.imuCalibrationMode,0);setText('imuCalibrationSamples',data.imuCalibrationSamples,0);setText('imuCalibrationStored',data.imuCalibrationStored?'CARGADA':'VACIA',0);setText('imuAccelPose',data.imuAccelWizardActive?(data.imuAccelPoseIndex+1)+'/6 '+data.imuAccelPoseName:'No iniciado',0);
+    setText('shadowStatus',data.faultMessage,0);setText('shadowPitch',data.imuRelativePitchDeg,3);setText('shadowGyro',data.imuCorrectedGyDps,3);setText('shadowError',data.pidError,3);setText('shadowP',data.pTerm,2);setText('shadowI',data.iTerm,2);setText('shadowD',data.dTerm,2);setText('shadowOutput',data.shadowPidOutput,0);setText('shadowDirection',data.shadowDirection,0);setText('shadowLeftPwm',data.leftPwm,0);setText('shadowRightPwm',data.rightPwm,0);setText('shadowSampleAge',data.imuSampleAgeMs,0);setText('shadowAlpha',data.imuFilterAlpha,3);setText('shadowAppliedSetpoint',data.setpoint,3);setText('controlSettingsStatus',(data.controlSettingsSaved?'OK: ':'ERROR: ')+data.controlSettingsMessage,0);setInput('shadowKp',data.kp,2,shadowPidDirty);setInput('shadowKi',data.ki,3,shadowPidDirty);setInput('shadowKd',data.kd,3,shadowPidDirty);setInput('shadowSetpoint',data.targetSetpoint,3,shadowSetpointDirty);setInput('shadowMaxPwm',data.maxPwm,0,shadowMaxPwmDirty);
+    benchArmed=data.benchTestArmed;setText('benchStatus',data.benchTestArmed?(data.benchTestActive?'ARMADA - MOTOR ACTIVO':'ARMADA'):'DESARMADA',0);setText('benchRemaining',data.benchArmRemainingMs/1000,1);setText('benchWatchdog',data.benchWatchdogAgeMs,0);setText('benchCommand',data.benchTestCommand,0);setText('benchLeftPwm',data.leftPwm,0);setText('benchRightPwm',data.rightPwm,0);setText('benchLeftSpeed',data.leftSpeed,0);setText('benchRightSpeed',data.rightSpeed,0);setText('benchRawLeft',data.rawLeftEncoder,0);setText('benchRawRight',data.rawRightEncoder,0);setText('benchCorrectedLeft',data.leftEncoder,0);setText('benchCorrectedRight',data.rightEncoder,0);document.getElementById('benchArm').disabled=data.benchTestArmed;document.getElementById('benchDisarm').disabled=!data.benchTestArmed;document.querySelectorAll('.bench-drive').forEach(button=>button.disabled=!data.benchTestArmed);
+    document.getElementById('imuCalibrationValues').textContent=`A offset: ${data.imuAccelOffset.map(v=>v.toFixed(4)).join(', ')}\nA escala: ${data.imuAccelScale.map(v=>v.toFixed(4)).join(', ')}\nG offset: ${data.imuGyroOffset.map(v=>v.toFixed(3)).join(', ')}\nM offset: ${data.imuMagOffset.map(v=>v.toFixed(1)).join(', ')}\nM escala: ${data.imuMagScale.map(v=>v.toFixed(3)).join(', ')}\nVertical: roll ${data.imuVerticalRollDeg.toFixed(2)}, pitch ${data.imuVerticalPitchDeg.toFixed(2)}`;
+    const imuBusy=data.imuCalibrationMode!=='idle';document.getElementById('sensorGyroCal').disabled=imuBusy;document.getElementById('sensorMagCal').disabled=imuBusy||!data.imuRawMagReady;document.getElementById('sensorVerticalCal').disabled=imuBusy||!data.imuFilterReady;document.getElementById('sensorAccelStart').disabled=imuBusy;document.getElementById('sensorAccelCapture').disabled=imuBusy||!data.imuAccelWizardActive;document.getElementById('sensorClearCal').disabled=imuBusy;
     setText('motorsEnabled',data.motorsEnabled?'ON':'OFF',0); setText('imuReady',data.imuReady?'OK':'NO',0); setText('safetyStop',data.safetyStop?'STOP':'OK',0);
     setText('autoRecoveryState',data.autoRecoveryState,0); setText('autoRecoveryStableMs',data.autoRecoveryStableMs,0);
     setText('autoTrimEnabled',data.autoTrimEnabled?'ON':'OFF',0); setText('autoTrimDone',data.autoTrimDone?'YES':'NO',0); setText('autoTrimOffset',data.autoTrimOffset,3); setText('autoTrimScore',data.autoTrimScore,2); setText('autoTrimBestScore',data.autoTrimBestScore,2); setText('autoTrimNoImprovementCycles',data.autoTrimNoImprovementCycles,0); setText('autoTrimPhase',data.autoTrimPhase,0); setText('autoTrimDirection',data.autoTrimDirection,0); setText('autoTrimFinalSetpoint',data.setpoint,3); setText('autoTrimStableElapsedMs',data.autoTrimStableElapsedMs,0); setText('autoTrimBlockReason',data.autoTrimBlockReason,0); setText('autoTrimStopReason',data.autoTrimStopReason || '--',0);
@@ -599,7 +906,7 @@ function connect(){
     setText('speedHoldEnabled',data.speedHoldEnabled?'ON':'OFF',0); setText('speedHoldAngleCorrection',data.speedHoldAngleCorrection); setText('speedHoldAverage',data.speedAverage); setText('speedHoldDeadband',data.speedHoldDeadband);
     setText('driveCommandActive',data.driveCommandActive?'ON':'OFF',0); setText('driveForwardValue',data.driveForward); setText('driveTurnValue',data.driveTurn); setText('driveTurnPwm',data.driveTurnPwm,0);
     setInput('kp',data.kp,3,pidDirty); setInput('ki',data.ki,3,pidDirty); setInput('kd',data.kd,3,pidDirty); setInput('setpoint',data.setpoint,3,setpointDirty); setInput('maxPwm',data.maxPwm,0,pwmDirty);
-    setInput('motorDeadzonePwm',data.motorDeadzonePwm,0,deadzoneDirty);
+    setInput('motorLeftMinPwm',data.motorLeftMinPwm,0,motorLimitsDirty);setInput('motorLeftMaxPwm',data.motorLeftMaxPwm,0,motorLimitsDirty);setInput('motorRightMinPwm',data.motorRightMinPwm,0,motorLimitsDirty);setInput('motorRightMaxPwm',data.motorRightMaxPwm,0,motorLimitsDirty);setInput('motorLeftCompensation',data.motorLeftCompensation,2,motorLimitsDirty);setInput('motorRightCompensation',data.motorRightCompensation,2,motorLimitsDirty);
     setInput('integralLimit',data.integralLimit,3,integralLimitDirty); setInput('iTermLimit',data.iTermLimit,1,iTermLimitDirty);
     setInput('encoderSyncKp',data.encoderSyncKp,4,encoderSyncDirty); setInput('encoderSyncDeadband',data.encoderSyncDeadband,1,encoderSyncDirty); setInput('encoderSyncMaxCorrection',data.encoderSyncMaxCorrection,0,encoderSyncDirty);
     setInput('gyroZHoldKp',data.gyroZHoldKp,4,gyroZHoldDirty); setInput('gyroZHoldMaxCorrection',data.gyroZHoldMaxCorrection,0,gyroZHoldDirty);
@@ -608,6 +915,13 @@ function connect(){
   };
 }
 window.addEventListener('blur',stopDrive);
+window.addEventListener('blur',stopBench);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)stopBench()});
+window.addEventListener('beforeunload',stopBench);
+document.getElementById('benchArm').addEventListener('click',()=>{if(!document.getElementById('benchConfirm').checked){alert('Confirma primero que las ruedas estan suspendidas.');return;}send({type:'bench_arm'})});
+document.getElementById('benchDisarm').addEventListener('click',()=>{stopBench();send({type:'bench_disarm'})});
+document.getElementById('benchStop').addEventListener('click',stopBench);
+bindBenchButton('benchLeftPositive',1,0);bindBenchButton('benchLeftNegative',-1,0);bindBenchButton('benchRightPositive',0,1);bindBenchButton('benchRightNegative',0,-1);bindBenchButton('benchBothPositive',1,1);bindBenchButton('benchBothNegative',-1,-1);
 markDirty();
 connect();
 </script>
@@ -622,6 +936,8 @@ void onWebSocketEvent(uint8_t clientId, WStype_t type, uint8_t *payload, size_t 
   } else if (type == WStype_TEXT) {
     payload[length] = '\0';
     handleMessage(clientId, reinterpret_cast<const char *>(payload));
+  } else if (type == WStype_DISCONNECTED) {
+    SharedState::requestBenchTestDisarm();
   }
 }
 

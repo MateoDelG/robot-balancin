@@ -1,6 +1,9 @@
 #include "motors_test.h"
 
+#include <math.h>
+
 #include "../../include/config.h"
+#include "control_settings.h"
 #include "encoders_test.h"
 
 namespace {
@@ -8,18 +11,19 @@ namespace {
 int currentLeftPwm = 0;
 int currentRightPwm = 0;
 
-int clampTestPwm(int pwm) {
-  if (pwm > Config::MOTOR_TEST_MAX_PWM) {
-    return Config::MOTOR_TEST_MAX_PWM;
-  }
-  if (pwm < -Config::MOTOR_TEST_MAX_PWM) {
-    return -Config::MOTOR_TEST_MAX_PWM;
-  }
-  return pwm;
+int applyConfiguredLimits(int pwm, double compensation, int minimumPwm, int maximumPwm,
+                          int safetyMaxPwm) {
+  const int effectiveMaximum = min(maximumPwm, constrain(abs(safetyMaxPwm), 0, Config::PWM_MAX_DUTY));
+  if (pwm == 0 || compensation <= 0.0 || effectiveMaximum == 0) return 0;
+  const int sign = pwm > 0 ? 1 : -1;
+  const int compensatedMagnitude = static_cast<int>(lround(abs(pwm) * compensation));
+  if (compensatedMagnitude <= 0) return 0;
+  const int magnitude = constrain(compensatedMagnitude, min(minimumPwm, effectiveMaximum),
+                                  effectiveMaximum);
+  return sign * magnitude;
 }
 
 void applyMotor(int channel, int in1Pin, int in2Pin, bool inverted, int pwm) {
-  pwm = clampTestPwm(pwm);
   if (inverted) {
     pwm = -pwm;
   }
@@ -80,15 +84,28 @@ void stop() {
 }
 
 void setLeftPwm(int pwm) {
-  currentLeftPwm = clampTestPwm(pwm);
+  setLeftPwm(pwm, Config::PWM_MAX_DUTY);
+}
+
+void setLeftPwm(int pwm, int safetyMaxPwm) {
+  const ControlSettings::Settings settings = ControlSettings::get();
+  currentLeftPwm = applyConfiguredLimits(pwm, settings.leftCompensation, settings.leftMinPwm,
+                                         settings.leftMaxPwm, safetyMaxPwm);
   applyMotor(Config::PWM_CHANNEL_MOTOR_LEFT, Config::PIN_MOTOR_LEFT_IN1,
-             Config::PIN_MOTOR_LEFT_IN2, Config::MOTOR_LEFT_INVERTED, pwm);
+             Config::PIN_MOTOR_LEFT_IN2, Config::MOTOR_LEFT_INVERTED, currentLeftPwm);
 }
 
 void setRightPwm(int pwm) {
-  currentRightPwm = clampTestPwm(pwm);
+  setRightPwm(pwm, Config::PWM_MAX_DUTY);
+}
+
+void setRightPwm(int pwm, int safetyMaxPwm) {
+  const ControlSettings::Settings settings = ControlSettings::get();
+  currentRightPwm = applyConfiguredLimits(pwm, settings.rightCompensation,
+                                          settings.rightMinPwm, settings.rightMaxPwm,
+                                          safetyMaxPwm);
   applyMotor(Config::PWM_CHANNEL_MOTOR_RIGHT, Config::PIN_MOTOR_RIGHT_IN1,
-             Config::PIN_MOTOR_RIGHT_IN2, Config::MOTOR_RIGHT_INVERTED, pwm);
+             Config::PIN_MOTOR_RIGHT_IN2, Config::MOTOR_RIGHT_INVERTED, currentRightPwm);
 }
 
 int getLeftPwm() {
@@ -97,6 +114,30 @@ int getLeftPwm() {
 
 int getRightPwm() {
   return currentRightPwm;
+}
+
+int getLeftMinPwm() {
+  return ControlSettings::get().leftMinPwm;
+}
+
+int getLeftMaxPwm() {
+  return ControlSettings::get().leftMaxPwm;
+}
+
+int getRightMinPwm() {
+  return ControlSettings::get().rightMinPwm;
+}
+
+int getRightMaxPwm() {
+  return ControlSettings::get().rightMaxPwm;
+}
+
+double getLeftCompensation() {
+  return ControlSettings::get().leftCompensation;
+}
+
+double getRightCompensation() {
+  return ControlSettings::get().rightCompensation;
 }
 
 void runLeftTest() {
