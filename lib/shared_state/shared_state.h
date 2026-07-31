@@ -78,6 +78,30 @@ struct RobotState {
   double pidTargetSetpoint = 0.0;
   bool controlSettingsSaved = true;
   char controlSettingsMessage[48] = "loaded";
+  float statePosition = 0.0f;
+  float stateRawVelocity = 0.0f;
+  float stateVelocity = 0.0f;
+  float stateAngleError = 0.0f;
+  float stateAngularVelocity = 0.0f;
+  float stateRawAngularAcceleration = 0.0f;
+  float stateAngularAcceleration = 0.0f;
+  double statePositionTerm = 0.0;
+  double stateVelocityTerm = 0.0;
+  double stateAngleTerm = 0.0;
+  double stateAngularVelocityTerm = 0.0;
+  double stateAngularAccelerationTerm = 0.0;
+  double stateOutputBeforeLimit = 0.0;
+  bool stateOutputSaturated = false;
+  double stateSaturationCorrection = 0.0;
+  double stateGainPosition = 0.0;
+  double stateGainVelocity = 0.0;
+  double stateGainAngle = 0.0;
+  double stateGainAngularVelocity = 0.0;
+  double stateGainAngularAcceleration = 0.0;
+  float stateVelocityFilterBeta = 0.0f;
+  float stateAngularAccelerationFilterBeta = 0.0f;
+  bool stateCalibrationWizardActive = false;
+  uint8_t stateCalibrationStage = 0;
   bool benchTestArmed = false;
   bool benchTestActive = false;
   unsigned long benchArmRemainingMs = 0;
@@ -203,6 +227,11 @@ struct RobotCommand {
   bool updatePidSetpoint = false;
   bool updatePidMaxPwm = false;
   bool updateMotorPwmLimits = false;
+  bool updateStateFeedback = false;
+  bool startStateCalibrationWizard = false;
+  bool updateStateCalibrationStage = false;
+  bool restoreStateCalibrationSnapshot = false;
+  bool finishStateCalibrationWizard = false;
   bool updateIntegralLimit = false;
   bool updateITermLimit = false;
   bool updateIntegralEnabled = false;
@@ -245,6 +274,14 @@ struct RobotCommand {
   int motorRightMaxPwm = 0;
   double motorLeftCompensation = 1.0;
   double motorRightCompensation = 1.0;
+  double stateGainPosition = 0.0;
+  double stateGainVelocity = 0.0;
+  double stateGainAngle = 0.0;
+  double stateGainAngularVelocity = 0.0;
+  double stateGainAngularAcceleration = 0.0;
+  float stateVelocityFilterBeta = 0.0f;
+  float stateAngularAccelerationFilterBeta = 0.0f;
+  uint8_t stateCalibrationStage = 0;
   int benchLeftPwm = 0;
   int benchRightPwm = 0;
 };
@@ -283,6 +320,14 @@ void requestPidSetpoint(double setpoint);
 void requestPidMaxPwm(int maxPwm);
 void requestMotorPwmLimits(int leftMinPwm, int leftMaxPwm, int rightMinPwm, int rightMaxPwm,
                            double leftCompensation, double rightCompensation);
+void requestStateFeedbackConfig(double positionGain, double velocityGain, double angleGain,
+                                double angularVelocityGain, double angularAccelerationGain,
+                                float velocityFilterBeta,
+                                float angularAccelerationFilterBeta);
+void requestStateCalibrationWizardStart();
+void requestStateCalibrationStage(uint8_t stage);
+void requestStateCalibrationRestore();
+void requestStateCalibrationFinish();
 void requestIntegralLimit(double limit);
 void requestITermLimit(double limit);
 void requestIntegralEnabled(bool enabled);

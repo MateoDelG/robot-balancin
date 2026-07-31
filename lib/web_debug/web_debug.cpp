@@ -120,6 +120,30 @@ String stateAsJson() {
   doc["targetSetpoint"] = state.pidTargetSetpoint;
   doc["controlSettingsSaved"] = state.controlSettingsSaved;
   doc["controlSettingsMessage"] = state.controlSettingsMessage;
+  doc["statePosition"] = state.statePosition;
+  doc["stateRawVelocity"] = state.stateRawVelocity;
+  doc["stateVelocity"] = state.stateVelocity;
+  doc["stateAngleError"] = state.stateAngleError;
+  doc["stateAngularVelocity"] = state.stateAngularVelocity;
+  doc["stateRawAngularAcceleration"] = state.stateRawAngularAcceleration;
+  doc["stateAngularAcceleration"] = state.stateAngularAcceleration;
+  doc["statePositionTerm"] = state.statePositionTerm;
+  doc["stateVelocityTerm"] = state.stateVelocityTerm;
+  doc["stateAngleTerm"] = state.stateAngleTerm;
+  doc["stateAngularVelocityTerm"] = state.stateAngularVelocityTerm;
+  doc["stateAngularAccelerationTerm"] = state.stateAngularAccelerationTerm;
+  doc["stateOutputBeforeLimit"] = state.stateOutputBeforeLimit;
+  doc["stateOutputSaturated"] = state.stateOutputSaturated;
+  doc["stateSaturationCorrection"] = state.stateSaturationCorrection;
+  doc["stateGainPosition"] = state.stateGainPosition;
+  doc["stateGainVelocity"] = state.stateGainVelocity;
+  doc["stateGainAngle"] = state.stateGainAngle;
+  doc["stateGainAngularVelocity"] = state.stateGainAngularVelocity;
+  doc["stateGainAngularAcceleration"] = state.stateGainAngularAcceleration;
+  doc["stateVelocityFilterBeta"] = state.stateVelocityFilterBeta;
+  doc["stateAngularAccelerationFilterBeta"] = state.stateAngularAccelerationFilterBeta;
+  doc["stateCalibrationWizardActive"] = state.stateCalibrationWizardActive;
+  doc["stateCalibrationStage"] = state.stateCalibrationStage;
   doc["benchTestArmed"] = state.benchTestArmed;
   doc["benchTestActive"] = state.benchTestActive;
   doc["benchArmRemainingMs"] = state.benchArmRemainingMs;
@@ -307,6 +331,50 @@ void handleMessage(uint8_t clientId, const char *payload) {
     SharedState::requestMotorPwmLimits(leftMin, leftMax, rightMin, rightMax,
                                        leftCompensation, rightCompensation);
     sendMessage(clientId, "ack", "motor PWM limits update requested");
+  } else if (strcmp(type, "set_state_feedback") == 0) {
+    if (!requireNumber(doc, "kx") || !requireNumber(doc, "kv") ||
+        !requireNumber(doc, "ktheta") || !requireNumber(doc, "komega") ||
+        !requireNumber(doc, "kalpha") || !requireNumber(doc, "velocityBeta") ||
+        !requireNumber(doc, "angularAccelerationBeta")) {
+      sendMessage(clientId, "error", "invalid state feedback values");
+      return;
+    }
+    const double kx = clampValue(doc["kx"].as<double>(), Config::STATE_GAIN_MIN,
+                                 Config::STATE_GAIN_MAX);
+    const double kv = clampValue(doc["kv"].as<double>(), Config::STATE_GAIN_MIN,
+                                 Config::STATE_GAIN_MAX);
+    const double ktheta = clampValue(doc["ktheta"].as<double>(), Config::STATE_GAIN_MIN,
+                                     Config::STATE_GAIN_MAX);
+    const double komega = clampValue(doc["komega"].as<double>(), Config::STATE_GAIN_MIN,
+                                     Config::STATE_GAIN_MAX);
+    const double kalpha = clampValue(doc["kalpha"].as<double>(), Config::STATE_GAIN_MIN,
+                                     Config::STATE_GAIN_MAX);
+    const float velocityBeta = clampValue(doc["velocityBeta"].as<float>(),
+                                          Config::STATE_FILTER_BETA_MIN,
+                                          Config::STATE_FILTER_BETA_MAX);
+    const float angularAccelerationBeta = clampValue(
+        doc["angularAccelerationBeta"].as<float>(), Config::STATE_FILTER_BETA_MIN,
+        Config::STATE_FILTER_BETA_MAX);
+    SharedState::requestStateFeedbackConfig(kx, kv, ktheta, komega, kalpha,
+                                            velocityBeta, angularAccelerationBeta);
+    sendMessage(clientId, "ack", "state feedback update requested");
+  } else if (strcmp(type, "state_wizard_start") == 0) {
+    SharedState::requestStateCalibrationWizardStart();
+    sendMessage(clientId, "ack", "state calibration wizard started");
+  } else if (strcmp(type, "state_wizard_stage") == 0) {
+    if (!requireNumber(doc, "stage")) {
+      sendMessage(clientId, "error", "invalid wizard stage");
+      return;
+    }
+    SharedState::requestStateCalibrationStage(
+        clampValue(doc["stage"].as<int>(), 0, 7));
+    sendMessage(clientId, "ack", "wizard stage updated");
+  } else if (strcmp(type, "state_wizard_restore") == 0) {
+    SharedState::requestStateCalibrationRestore();
+    sendMessage(clientId, "ack", "wizard snapshot restore requested");
+  } else if (strcmp(type, "state_wizard_finish") == 0) {
+    SharedState::requestStateCalibrationFinish();
+    sendMessage(clientId, "ack", "state calibration wizard completed");
   } else if (strcmp(type, "bench_arm") == 0) {
     SharedState::requestBenchTestArm();
     sendMessage(clientId, "ack", "bench test arm requested");
@@ -496,6 +564,7 @@ const char PAGE[] PROGMEM = R"rawliteral(
     #status{color:#93c5fd;font-size:13px}.fault{color:#fca5a5}
     .sensor-mode section:not(.sensor-section){display:none}.sensor-mode main{grid-template-columns:repeat(auto-fit,minmax(360px,1fr))}
     .sensor-status{padding:10px;background:#0f172a;border-radius:8px;color:#fbbf24;min-height:20px}.cal-values{white-space:pre-line;font:12px Consolas,monospace;color:#9ca3af;line-height:1.5}.wide{grid-column:1/-1}
+    #stateChart{display:block;width:100%;height:420px;background:#07101f;border:1px solid #334155;border-radius:8px}
   </style>
 </head>
 <body>
@@ -526,30 +595,52 @@ const char PAGE[] PROGMEM = R"rawliteral(
     </div>
     <p>La entrada de equilibrio es <b>pitch relativo</b> con velocidad <b>GY</b>. Los motores solo reciben la salida cuando el PID se activa explicitamente.</p>
   </section>
-  <section class="sensor-section wide"><h2>Control de equilibrio PID</h2>
+  <section class="sensor-section wide"><h2>Realimentacion de estados</h2>
     <div class="sensor-status" id="shadowStatus">Esperando estado</div>
     <div class="grid">
-      <div class="item"><div class="label">Pitch relativo</div><div class="value" id="shadowPitch">--</div></div>
-      <div class="item"><div class="label">GY corregido</div><div class="value" id="shadowGyro">--</div></div>
-      <div class="item"><div class="label">Error</div><div class="value" id="shadowError">--</div></div>
-      <div class="item"><div class="label">Termino P</div><div class="value" id="shadowP">--</div></div>
-      <div class="item"><div class="label">Termino I</div><div class="value" id="shadowI">--</div></div>
-      <div class="item"><div class="label">Termino D</div><div class="value" id="shadowD">--</div></div>
-      <div class="item"><div class="label">PWM teorico</div><div class="value" id="shadowOutput">--</div></div>
-      <div class="item"><div class="label">Direccion teorica</div><div class="value" id="shadowDirection">--</div></div>
+      <div class="item"><div class="label">Posicion (cuentas)</div><div class="value" id="statePosition">--</div></div>
+      <div class="item"><div class="label">Velocidad cruda / filtrada</div><div class="value"><span id="stateRawVelocity">--</span> / <span id="stateVelocity">--</span></div></div>
+      <div class="item"><div class="label">Error angular</div><div class="value" id="stateAngleError">--</div></div>
+      <div class="item"><div class="label">Velocidad angular</div><div class="value" id="stateAngularVelocity">--</div></div>
+      <div class="item"><div class="label">Acel. angular cruda / filtrada</div><div class="value"><span id="stateRawAngularAcceleration">--</span> / <span id="stateAngularAcceleration">--</span></div></div>
+      <div class="item"><div class="label">Ux / Uv</div><div class="value"><span id="statePositionTerm">--</span> / <span id="stateVelocityTerm">--</span></div></div>
+      <div class="item"><div class="label">Utheta / Uomega</div><div class="value"><span id="stateAngleTerm">--</span> / <span id="stateAngularVelocityTerm">--</span></div></div>
+      <div class="item"><div class="label">Ualpha</div><div class="value" id="stateAngularAccelerationTerm">--</div></div>
+      <div class="item"><div class="label">Salida antes / despues limite</div><div class="value"><span id="stateOutputBeforeLimit">--</span> / <span id="shadowOutput">--</span></div></div>
+      <div class="item"><div class="label">Saturacion / correccion</div><div class="value"><span id="stateOutputSaturated">--</span> / <span id="stateSaturationCorrection">--</span></div></div>
       <div class="item"><div class="label">PWM fisico L/R</div><div class="value"><span id="shadowLeftPwm">--</span>/<span id="shadowRightPwm">--</span></div></div>
       <div class="item"><div class="label">Edad muestra</div><div class="value"><span id="shadowSampleAge">--</span> ms</div></div>
-      <div class="item"><div class="label">Alpha</div><div class="value" id="shadowAlpha">--</div></div>
       <div class="item"><div class="label">Setpoint aplicado</div><div class="value" id="shadowAppliedSetpoint">--</div></div>
       <div class="item"><div class="label">Persistencia</div><div class="value" id="controlSettingsStatus">--</div></div>
     </div>
-    <div class="grid" style="margin-top:12px"><label>Kp<input id="shadowKp" type="number" step="0.1" min="0"></label><label>Ki<input id="shadowKi" type="number" step="0.01" min="0"></label><label>Kd<input id="shadowKd" type="number" step="0.01" min="0"></label></div>
-    <button onclick="applyShadowPid()">Guardar PID sombra</button>
-    <div class="grid" style="margin-top:12px"><label>Setpoint objetivo (-10 a 10)<input id="shadowSetpoint" type="number" step="0.01" min="-10" max="10"></label><label>Maximo PID (0-255)<input id="shadowMaxPwm" type="number" step="1" min="0" max="255"></label></div>
-    <button onclick="applyShadowControl()">Guardar setpoint y maximo PID</button>
-    <div class="actions"><button class="ok" onclick="enableBalance()">ACTIVAR PID</button><button class="warn" onclick="disableBalance()">Desactivar PID</button><button class="stop" onclick="stopBalance()">STOP</button></div>
-    <p>El setpoint se aplica con rampa. Activar requiere el robot cerca del setpoint. Cambiar PID, setpoint o limites desactiva el control. El PID continua activo si se desconecta el dashboard y solo se detiene con STOP o una falla local.</p>
+    <div class="grid" style="margin-top:12px">
+      <label>Kx posicion<input id="stateGainPosition" type="number" step="0.0001"></label>
+      <label>Kv velocidad<input id="stateGainVelocity" type="number" step="0.0001"></label>
+      <label>Ktheta angulo<input id="stateGainAngle" type="number" step="0.1"></label>
+      <label>Komega velocidad angular<input id="stateGainAngularVelocity" type="number" step="0.01"></label>
+      <label>Kalpha aceleracion angular<input id="stateGainAngularAcceleration" type="number" step="0.0001"></label>
+      <label>Beta velocidad<input id="stateVelocityFilterBeta" type="number" min="0.01" max="1" step="0.01"></label>
+      <label>Beta aceleracion angular<input id="stateAngularAccelerationFilterBeta" type="number" min="0.01" max="1" step="0.01"></label>
+    </div>
+    <button onclick="applyStateFeedback()">Guardar ganancias y filtros</button>
+    <div class="grid" style="margin-top:12px"><label>Setpoint objetivo (-10 a 10)<input id="shadowSetpoint" type="number" step="0.01" min="-10" max="10"></label><label>Maximo PWM (0-255)<input id="shadowMaxPwm" type="number" step="1" min="0" max="255"></label></div>
+    <button onclick="applyShadowControl()">Guardar setpoint y maximo PWM</button>
+    <div class="actions"><button class="ok" onclick="enableBalance()">ACTIVAR CONTROL</button><button class="warn" onclick="disableBalance()">Desactivar control</button><button class="stop" onclick="stopBalance()">STOP</button></div>
+    <p>Al activar se ponen los encoders en cero. Cambiar ganancias, filtros, setpoint o limites desactiva el control.</p>
     <p><b>Advertencia:</b> 255 PWM permite potencia completa.</p>
+  </section>
+  <section class="sensor-section wide"><h2>Grafica de estados</h2>
+    <canvas id="stateChart"></canvas>
+    <div class="actions"><button id="stateRecordToggle" onclick="toggleStateRecording()">Pausar registro</button><button onclick="clearStateHistory()">Limpiar</button><button class="ok" onclick="exportStateCsv()">Exportar CSV</button></div>
+    <p>Ventana visible: ultimos 60 s. El CSV conserva hasta 10 minutos. Muestras registradas: <span id="stateSampleCount">0</span>.</p>
+    <p>Cada estado usa una escala vertical independiente; los valores exportados no se normalizan.</p>
+  </section>
+  <section class="sensor-section wide"><h2>Asistente de calibracion por etapas</h2>
+    <div class="sensor-status"><b id="wizardStageTitle">Etapa 0: Preparacion</b></div>
+    <p id="wizardInstructions">Pulsa Iniciar asistente para guardar una copia de las ganancias actuales.</p>
+    <div class="item"><div class="label">Que debes comprobar</div><div id="wizardChecklist">Control apagado, PWM 0/0 y robot sujeto.</div></div>
+    <div class="actions"><button onclick="startStateWizard()">Iniciar asistente</button><button onclick="previousStateWizardStage()">Anterior</button><button class="ok" onclick="nextStateWizardStage()">Confirmar y continuar</button><button class="warn" onclick="restoreStateWizard()">Restaurar valores iniciales</button><button class="stop" onclick="stopBalance()">STOP</button></div>
+    <p>El avance es manual. Cada cambio de etapa detiene el control. Kalpha puede omitirse dejando su valor en cero.</p>
   </section>
   <section class="sensor-section wide"><h2>Prueba de banco: motores y encoders</h2>
     <div class="sensor-status" id="benchStatus">DESARMADA</div>
@@ -770,9 +861,25 @@ let encoderSyncDirty = false;
 let encoderSyncTargetDirty = false;
 let gyroZHoldDirty = false;
 let speedHoldDirty = false;
-let shadowPidDirty = false;
+let stateFeedbackDirty = false;
 let shadowSetpointDirty = false;
 let shadowMaxPwmDirty = false;
+let currentWizardStage = 0;
+const wizardStages = [
+  ['Etapa 0: Preparacion','Sujeta el robot, confirma MPU9250 calibrado, sentidos correctos y revisa limites y compensaciones.','Control apagado, PWM 0/0, banco desarmado y robot firmemente sujeto.'],
+  ['Etapa 1: Validacion de estados','Con motores apagados, gira las ruedas e inclina lentamente el robot para comprobar los cinco estados.','Posicion y velocidad cambian con las ruedas; angulo, velocidad y aceleracion angular cambian con la inclinacion.'],
+  ['Etapa 2: Ganancia Ktheta','Deja Kx, Kv y Kalpha en cero. Ajusta Ktheta con movimientos pequenos y el robot sujeto.','Aumenta Ktheta si la reaccion es debil; reducelo si la reaccion es demasiado brusca.'],
+  ['Etapa 3: Ganancia Komega','Conserva Ktheta y ajusta Komega para amortiguar la oscilacion angular.','Aumenta Komega si oscila; reducelo si la respuesta queda excesivamente frenada.'],
+  ['Etapa 4: Ganancia Kv','Coloca el robot en el suelo con Kx y Kalpha en cero. Ajusta Kv para reducir la velocidad horizontal.','La velocidad filtrada debe regresar cerca de cero sin oscilaciones crecientes.'],
+  ['Etapa 5: Ganancia Kx','Activa el control para poner encoders en cero y empuja suavemente el robot.','Aumenta Kx si no regresa; reducelo si cruza repetidamente la posicion cero.'],
+  ['Etapa 6: Ganancia Kalpha opcional','Empieza con Kalpha en cero y usa incrementos muy pequenos solo si mejora el amortiguamiento.','Conserva Kalpha solo si reduce picos sin amplificar el ruido de aceleracion angular.'],
+  ['Etapa 7: Validacion final','Prueba equilibrio quieto y perturbaciones suaves en ambos sentidos.','Confirma posicion y velocidad cercanas a cero, angulo estable y PWM dentro de limites.']
+];
+const STATE_HISTORY_MAX = 6000;
+const STATE_CHART_SAMPLES = 600;
+let stateHistory = [];
+let stateRecording = true;
+let stateRecordingStartMs = 0;
 let driveTimer = null;
 let benchTimer = null;
 let benchArmed = false;
@@ -819,7 +926,38 @@ function bindDriveButton(id,forward,turn){
   button.addEventListener('pointerleave',stopDrive);
 }
 function applyPid(){send({type:'set_pid',kp:num('kp'),ki:num('ki'),kd:num('kd')}); pidDirty=false;}
-function applyShadowPid(){send({type:'set_shadow_pid',kp:num('shadowKp'),ki:num('shadowKi'),kd:num('shadowKd')}); shadowPidDirty=false;}
+function applyStateFeedback(){send({type:'set_state_feedback',kx:num('stateGainPosition'),kv:num('stateGainVelocity'),ktheta:num('stateGainAngle'),komega:num('stateGainAngularVelocity'),kalpha:num('stateGainAngularAcceleration'),velocityBeta:num('stateVelocityFilterBeta'),angularAccelerationBeta:num('stateAngularAccelerationFilterBeta')});stateFeedbackDirty=false;}
+function renderStateWizard(stage){currentWizardStage=Math.max(0,Math.min(7,stage));const item=wizardStages[currentWizardStage];setText('wizardStageTitle',item[0],0);setText('wizardInstructions',item[1],0);setText('wizardChecklist',item[2],0);}
+function startStateWizard(){send({type:'state_wizard_start'});renderStateWizard(0);}
+function previousStateWizardStage(){const stage=Math.max(0,currentWizardStage-1);send({type:'state_wizard_stage',stage});renderStateWizard(stage);}
+function nextStateWizardStage(){if(!confirm('Confirma que realizaste la prueba y que el comportamiento fisico es correcto.'))return;if(currentWizardStage>=7){send({type:'state_wizard_finish'});return;}const stage=currentWizardStage+1;send({type:'state_wizard_stage',stage});renderStateWizard(stage);}
+function restoreStateWizard(){if(confirm('Restaurar las ganancias guardadas al iniciar el asistente?'))send({type:'state_wizard_restore'});}
+function finiteValue(value){return typeof value==='number'&&Number.isFinite(value)?value:0;}
+function captureStateSample(data){
+  if(!stateRecording)return;
+  const now=Date.now();if(!stateRecordingStartMs)stateRecordingStartMs=now;
+  stateHistory.push({elapsedMs:now-stateRecordingStartMs,epochMs:now,position:finiteValue(data.statePosition),rawVelocity:finiteValue(data.stateRawVelocity),velocity:finiteValue(data.stateVelocity),angleError:finiteValue(data.stateAngleError),angularVelocity:finiteValue(data.stateAngularVelocity),rawAngularAcceleration:finiteValue(data.stateRawAngularAcceleration),angularAcceleration:finiteValue(data.stateAngularAcceleration),ux:finiteValue(data.statePositionTerm),uv:finiteValue(data.stateVelocityTerm),utheta:finiteValue(data.stateAngleTerm),uomega:finiteValue(data.stateAngularVelocityTerm),ualpha:finiteValue(data.stateAngularAccelerationTerm),outputBeforeLimit:finiteValue(data.stateOutputBeforeLimit),output:finiteValue(data.shadowPidOutput),leftPwm:finiteValue(data.leftPwm),rightPwm:finiteValue(data.rightPwm),saturated:data.stateOutputSaturated?1:0,kx:finiteValue(data.stateGainPosition),kv:finiteValue(data.stateGainVelocity),ktheta:finiteValue(data.stateGainAngle),komega:finiteValue(data.stateGainAngularVelocity),kalpha:finiteValue(data.stateGainAngularAcceleration),velocityBeta:finiteValue(data.stateVelocityFilterBeta),angularAccelerationBeta:finiteValue(data.stateAngularAccelerationFilterBeta),setpoint:finiteValue(data.setpoint),targetSetpoint:finiteValue(data.targetSetpoint),maxPwm:finiteValue(data.maxPwm),controlPeriodMs:finiteValue(data.controlPeriodMs),leftMinPwm:finiteValue(data.motorLeftMinPwm),leftMaxPwm:finiteValue(data.motorLeftMaxPwm),rightMinPwm:finiteValue(data.motorRightMinPwm),rightMaxPwm:finiteValue(data.motorRightMaxPwm),leftCompensation:finiteValue(data.motorLeftCompensation),rightCompensation:finiteValue(data.motorRightCompensation)});
+  if(stateHistory.length>STATE_HISTORY_MAX)stateHistory.splice(0,stateHistory.length-STATE_HISTORY_MAX);
+  setText('stateSampleCount',stateHistory.length,0);drawStateChart();
+}
+function toggleStateRecording(){stateRecording=!stateRecording;setText('stateRecordToggle',stateRecording?'Pausar registro':'Reanudar registro',0);}
+function clearStateHistory(){stateHistory=[];stateRecordingStartMs=Date.now();setText('stateSampleCount',0,0);drawStateChart();}
+function drawStateChart(){
+  const canvas=document.getElementById('stateChart');if(!canvas)return;
+  const cssWidth=Math.max(320,canvas.clientWidth||1200),cssHeight=420,dpr=window.devicePixelRatio||1;
+  if(canvas.width!==Math.round(cssWidth*dpr)||canvas.height!==Math.round(cssHeight*dpr)){canvas.width=Math.round(cssWidth*dpr);canvas.height=Math.round(cssHeight*dpr);canvas.style.height=cssHeight+'px';}
+  const ctx=canvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,cssWidth,cssHeight);ctx.fillStyle='#07101f';ctx.fillRect(0,0,cssWidth,cssHeight);
+  const series=[['Posicion',s=>s.position,'#f59e0b'],['Velocidad',s=>s.velocity,'#22c55e'],['Error angular',s=>s.angleError,'#ef4444'],['Vel. angular',s=>s.angularVelocity,'#38bdf8'],['Acel. angular',s=>s.angularAcceleration,'#c084fc']];
+  const samples=stateHistory.slice(-STATE_CHART_SAMPLES),left=104,right=12,bandHeight=cssHeight/series.length,plotWidth=cssWidth-left-right;
+  ctx.font='11px Arial';
+  series.forEach((entry,index)=>{const top=index*bandHeight,bottom=top+bandHeight;ctx.strokeStyle='#1e293b';ctx.beginPath();ctx.moveTo(0,bottom);ctx.lineTo(cssWidth,bottom);ctx.stroke();const values=samples.map(entry[1]);let min=values.length?Math.min(...values):-1,max=values.length?Math.max(...values):1;if(min>0)min=0;if(max<0)max=0;if(max-min<1e-6){min-=1;max+=1;}const padding=(max-min)*0.08;min-=padding;max+=padding;const y=value=>top+8+(max-value)/(max-min)*(bandHeight-16);ctx.strokeStyle='#334155';ctx.beginPath();ctx.moveTo(left,y(0));ctx.lineTo(cssWidth-right,y(0));ctx.stroke();ctx.fillStyle=entry[2];ctx.fillText(entry[0],8,top+17);ctx.fillStyle='#94a3b8';ctx.fillText(max.toFixed(1),8,top+34);ctx.fillText(min.toFixed(1),8,bottom-8);if(samples.length>1){ctx.strokeStyle=entry[2];ctx.lineWidth=1.5;ctx.beginPath();samples.forEach((sample,sampleIndex)=>{const x=left+sampleIndex/(samples.length-1)*plotWidth,py=y(entry[1](sample));if(sampleIndex===0)ctx.moveTo(x,py);else ctx.lineTo(x,py);});ctx.stroke();}});
+}
+function exportStateCsv(){
+  if(!stateHistory.length){alert('No hay muestras para exportar.');return;}
+  const header='elapsed_ms,epoch_ms,position_counts,raw_velocity_counts_s,velocity_counts_s,angle_error_deg,angular_velocity_deg_s,raw_angular_accel_deg_s2,angular_accel_deg_s2,Ux,Uv,Utheta,Uomega,Ualpha,output_before_limit,output_limited,left_pwm,right_pwm,saturated,Kx,Kv,Ktheta,Komega,Kalpha,velocity_filter_beta,angular_accel_filter_beta,angle_setpoint_deg,target_setpoint_deg,max_pwm,control_period_ms,left_min_pwm,left_max_pwm,right_min_pwm,right_max_pwm,left_compensation,right_compensation';
+  const rows=stateHistory.map(s=>[s.elapsedMs,s.epochMs,s.position,s.rawVelocity,s.velocity,s.angleError,s.angularVelocity,s.rawAngularAcceleration,s.angularAcceleration,s.ux,s.uv,s.utheta,s.uomega,s.ualpha,s.outputBeforeLimit,s.output,s.leftPwm,s.rightPwm,s.saturated,s.kx,s.kv,s.ktheta,s.komega,s.kalpha,s.velocityBeta,s.angularAccelerationBeta,s.setpoint,s.targetSetpoint,s.maxPwm,s.controlPeriodMs,s.leftMinPwm,s.leftMaxPwm,s.rightMinPwm,s.rightMaxPwm,s.leftCompensation,s.rightCompensation].join(','));
+  const blob=new Blob([[header,...rows].join('\n')],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='robot_estados_'+new Date().toISOString().replace(/[:.]/g,'-')+'.csv';document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
+}
 function applyShadowControl(){send({type:'set_setpoint',setpoint:num('shadowSetpoint')});send({type:'set_pwm_limit',maxPwm:num('shadowMaxPwm')});shadowSetpointDirty=false;shadowMaxPwmDirty=false;}
 function enableBalance(){send({type:'enable_motors'});}
 function disableBalance(){send({type:'disable_motors'});}
@@ -859,7 +997,7 @@ function markDirty(){
   ['encoderSyncKp','encoderSyncDeadband','encoderSyncMaxCorrection'].forEach(id=>document.getElementById(id).addEventListener('input',()=>encoderSyncDirty=true));
   ['gyroZHoldKp','gyroZHoldMaxCorrection'].forEach(id=>document.getElementById(id).addEventListener('input',()=>gyroZHoldDirty=true));
   ['speedHoldKp','speedHoldMaxAngle'].forEach(id=>document.getElementById(id).addEventListener('input',()=>speedHoldDirty=true));
-  ['shadowKp','shadowKi','shadowKd'].forEach(id=>document.getElementById(id).addEventListener('input',()=>shadowPidDirty=true));
+  ['stateGainPosition','stateGainVelocity','stateGainAngle','stateGainAngularVelocity','stateGainAngularAcceleration','stateVelocityFilterBeta','stateAngularAccelerationFilterBeta'].forEach(id=>document.getElementById(id).addEventListener('input',()=>stateFeedbackDirty=true));
   document.getElementById('shadowSetpoint').addEventListener('input',()=>shadowSetpointDirty=true);
   document.getElementById('shadowMaxPwm').addEventListener('input',()=>shadowMaxPwmDirty=true);
   bindDriveButton('driveForward',1,0);
@@ -877,8 +1015,9 @@ function connect(){
   ws.onmessage=(event)=>{
     const data=JSON.parse(event.data);
     if(data.type==='ack' || data.type==='error'){setText('status',data.message,0); console.log(data);return;}
+    captureStateSample(data);
     document.body.classList.toggle('sensor-mode',data.rawImuMode);
-    if(data.rawImuMode)setText('pageTitle','Robot Balancin - Control sombra MPU9250',0);
+    if(data.rawImuMode)setText('pageTitle','Robot Balancin - Realimentacion de estados',0);
     setText('angle',data.selectedAngle); setText('gyroRate',data.gyroRate); setTurnDirection(data.turnDirection); setText('turnRate',data.turnRate); setText('gyroZHoldTurnRate',data.turnRate); setText('leftPwm',data.leftPwm,0); setText('rightPwm',data.rightPwm,0);
     setText('imuRawAxG',data.imuRawAxG,3); setText('imuRawAyG',data.imuRawAyG,3); setText('imuRawAzG',data.imuRawAzG,3); setText('imuRawAccelNormG',data.imuRawAccelNormG,3);
     setText('imuRawGxDps',data.imuRawGxDps,2); setText('imuRawGyDps',data.imuRawGyDps,2); setText('imuRawGzDps',data.imuRawGzDps,2);
@@ -891,7 +1030,7 @@ function connect(){
     setText('imuAccelRateHz',data.imuAccelRateHz,0);setText('imuGyroRateHz',data.imuGyroRateHz,0);setText('imuMagRateHz',data.imuMagRateHz,0);
     setText('imuAccelCalibrated',data.imuAccelCalibrated?'VALIDA':'PENDIENTE',0);setText('imuGyroCalibrated',data.imuGyroCalibrated?'VALIDA':'PENDIENTE',0);setText('imuMagCalibrated',data.imuMagCalibrated?'VALIDA':'PENDIENTE',0);setText('imuVerticalCalibrated',data.imuVerticalCalibrated?'VALIDA':'PENDIENTE',0);setText('imuFilterReady',data.imuFilterReady?'LISTO':'NO',0);
     setText('imuCalibrationStatus',data.imuCalibrationStatus,0);setText('imuCalibrationMode',data.imuCalibrationMode,0);setText('imuCalibrationSamples',data.imuCalibrationSamples,0);setText('imuCalibrationStored',data.imuCalibrationStored?'CARGADA':'VACIA',0);setText('imuAccelPose',data.imuAccelWizardActive?(data.imuAccelPoseIndex+1)+'/6 '+data.imuAccelPoseName:'No iniciado',0);
-    setText('shadowStatus',data.faultMessage,0);setText('shadowPitch',data.imuRelativePitchDeg,3);setText('shadowGyro',data.imuCorrectedGyDps,3);setText('shadowError',data.pidError,3);setText('shadowP',data.pTerm,2);setText('shadowI',data.iTerm,2);setText('shadowD',data.dTerm,2);setText('shadowOutput',data.shadowPidOutput,0);setText('shadowDirection',data.shadowDirection,0);setText('shadowLeftPwm',data.leftPwm,0);setText('shadowRightPwm',data.rightPwm,0);setText('shadowSampleAge',data.imuSampleAgeMs,0);setText('shadowAlpha',data.imuFilterAlpha,3);setText('shadowAppliedSetpoint',data.setpoint,3);setText('controlSettingsStatus',(data.controlSettingsSaved?'OK: ':'ERROR: ')+data.controlSettingsMessage,0);setInput('shadowKp',data.kp,2,shadowPidDirty);setInput('shadowKi',data.ki,3,shadowPidDirty);setInput('shadowKd',data.kd,3,shadowPidDirty);setInput('shadowSetpoint',data.targetSetpoint,3,shadowSetpointDirty);setInput('shadowMaxPwm',data.maxPwm,0,shadowMaxPwmDirty);
+    setText('shadowStatus',data.faultMessage,0);setText('statePosition',data.statePosition,1);setText('stateRawVelocity',data.stateRawVelocity,1);setText('stateVelocity',data.stateVelocity,1);setText('stateAngleError',data.stateAngleError,3);setText('stateAngularVelocity',data.stateAngularVelocity,2);setText('stateRawAngularAcceleration',data.stateRawAngularAcceleration,1);setText('stateAngularAcceleration',data.stateAngularAcceleration,1);setText('statePositionTerm',data.statePositionTerm,1);setText('stateVelocityTerm',data.stateVelocityTerm,1);setText('stateAngleTerm',data.stateAngleTerm,1);setText('stateAngularVelocityTerm',data.stateAngularVelocityTerm,1);setText('stateAngularAccelerationTerm',data.stateAngularAccelerationTerm,1);setText('stateOutputBeforeLimit',data.stateOutputBeforeLimit,1);setText('stateOutputSaturated',data.stateOutputSaturated?'SI':'NO',0);setText('stateSaturationCorrection',data.stateSaturationCorrection,1);setText('shadowOutput',data.shadowPidOutput,0);setText('shadowLeftPwm',data.leftPwm,0);setText('shadowRightPwm',data.rightPwm,0);setText('shadowSampleAge',data.imuSampleAgeMs,0);setText('shadowAppliedSetpoint',data.setpoint,3);setText('controlSettingsStatus',(data.controlSettingsSaved?'OK: ':'ERROR: ')+data.controlSettingsMessage,0);setInput('stateGainPosition',data.stateGainPosition,5,stateFeedbackDirty);setInput('stateGainVelocity',data.stateGainVelocity,5,stateFeedbackDirty);setInput('stateGainAngle',data.stateGainAngle,3,stateFeedbackDirty);setInput('stateGainAngularVelocity',data.stateGainAngularVelocity,3,stateFeedbackDirty);setInput('stateGainAngularAcceleration',data.stateGainAngularAcceleration,6,stateFeedbackDirty);setInput('stateVelocityFilterBeta',data.stateVelocityFilterBeta,3,stateFeedbackDirty);setInput('stateAngularAccelerationFilterBeta',data.stateAngularAccelerationFilterBeta,3,stateFeedbackDirty);setInput('shadowSetpoint',data.targetSetpoint,3,shadowSetpointDirty);setInput('shadowMaxPwm',data.maxPwm,0,shadowMaxPwmDirty);if(data.stateCalibrationWizardActive)renderStateWizard(data.stateCalibrationStage);
     benchArmed=data.benchTestArmed;setText('benchStatus',data.benchTestArmed?(data.benchTestActive?'ARMADA - MOTOR ACTIVO':'ARMADA'):'DESARMADA',0);setText('benchRemaining',data.benchArmRemainingMs/1000,1);setText('benchWatchdog',data.benchWatchdogAgeMs,0);setText('benchCommand',data.benchTestCommand,0);setText('benchLeftPwm',data.leftPwm,0);setText('benchRightPwm',data.rightPwm,0);setText('benchLeftSpeed',data.leftSpeed,0);setText('benchRightSpeed',data.rightSpeed,0);setText('benchRawLeft',data.rawLeftEncoder,0);setText('benchRawRight',data.rawRightEncoder,0);setText('benchCorrectedLeft',data.leftEncoder,0);setText('benchCorrectedRight',data.rightEncoder,0);document.getElementById('benchArm').disabled=data.benchTestArmed;document.getElementById('benchDisarm').disabled=!data.benchTestArmed;document.querySelectorAll('.bench-drive').forEach(button=>button.disabled=!data.benchTestArmed);
     document.getElementById('imuCalibrationValues').textContent=`A offset: ${data.imuAccelOffset.map(v=>v.toFixed(4)).join(', ')}\nA escala: ${data.imuAccelScale.map(v=>v.toFixed(4)).join(', ')}\nG offset: ${data.imuGyroOffset.map(v=>v.toFixed(3)).join(', ')}\nM offset: ${data.imuMagOffset.map(v=>v.toFixed(1)).join(', ')}\nM escala: ${data.imuMagScale.map(v=>v.toFixed(3)).join(', ')}\nVertical: roll ${data.imuVerticalRollDeg.toFixed(2)}, pitch ${data.imuVerticalPitchDeg.toFixed(2)}`;
     const imuBusy=data.imuCalibrationMode!=='idle';document.getElementById('sensorGyroCal').disabled=imuBusy;document.getElementById('sensorMagCal').disabled=imuBusy||!data.imuRawMagReady;document.getElementById('sensorVerticalCal').disabled=imuBusy||!data.imuFilterReady;document.getElementById('sensorAccelStart').disabled=imuBusy;document.getElementById('sensorAccelCapture').disabled=imuBusy||!data.imuAccelWizardActive;document.getElementById('sensorClearCal').disabled=imuBusy;
@@ -915,6 +1054,7 @@ function connect(){
   };
 }
 window.addEventListener('blur',stopDrive);
+window.addEventListener('resize',drawStateChart);
 window.addEventListener('blur',stopBench);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)stopBench()});
 window.addEventListener('beforeunload',stopBench);

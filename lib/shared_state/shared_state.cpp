@@ -68,6 +68,11 @@ RobotCommand consumeCommand() {
     robotCommand.updatePidSetpoint = false;
     robotCommand.updatePidMaxPwm = false;
     robotCommand.updateMotorPwmLimits = false;
+    robotCommand.updateStateFeedback = false;
+    robotCommand.startStateCalibrationWizard = false;
+    robotCommand.updateStateCalibrationStage = false;
+    robotCommand.restoreStateCalibrationSnapshot = false;
+    robotCommand.finishStateCalibrationWizard = false;
     robotCommand.updateIntegralLimit = false;
     robotCommand.updateITermLimit = false;
     robotCommand.updateIntegralEnabled = false;
@@ -263,6 +268,43 @@ void requestMotorPwmLimits(int leftMinPwm, int leftMaxPwm, int rightMinPwm, int 
     robotCommand.updateMotorPwmLimits = true;
     xSemaphoreGive(stateMutex);
   }
+}
+
+void requestStateFeedbackConfig(double positionGain, double velocityGain, double angleGain,
+                                double angularVelocityGain, double angularAccelerationGain,
+                                float velocityFilterBeta,
+                                float angularAccelerationFilterBeta) {
+  if (stateMutex != nullptr && xSemaphoreTake(stateMutex, portMAX_DELAY) == pdTRUE) {
+    robotCommand.stateGainPosition = positionGain;
+    robotCommand.stateGainVelocity = velocityGain;
+    robotCommand.stateGainAngle = angleGain;
+    robotCommand.stateGainAngularVelocity = angularVelocityGain;
+    robotCommand.stateGainAngularAcceleration = angularAccelerationGain;
+    robotCommand.stateVelocityFilterBeta = velocityFilterBeta;
+    robotCommand.stateAngularAccelerationFilterBeta = angularAccelerationFilterBeta;
+    robotCommand.updateStateFeedback = true;
+    xSemaphoreGive(stateMutex);
+  }
+}
+
+void requestStateCalibrationWizardStart() {
+  withLock([]() { robotCommand.startStateCalibrationWizard = true; });
+}
+
+void requestStateCalibrationStage(uint8_t stage) {
+  if (stateMutex != nullptr && xSemaphoreTake(stateMutex, portMAX_DELAY) == pdTRUE) {
+    robotCommand.stateCalibrationStage = stage;
+    robotCommand.updateStateCalibrationStage = true;
+    xSemaphoreGive(stateMutex);
+  }
+}
+
+void requestStateCalibrationRestore() {
+  withLock([]() { robotCommand.restoreStateCalibrationSnapshot = true; });
+}
+
+void requestStateCalibrationFinish() {
+  withLock([]() { robotCommand.finishStateCalibrationWizard = true; });
 }
 
 void requestIntegralLimit(double limit) {

@@ -11,6 +11,8 @@
 #include "imu9250.h"
 #include "motors_test.h"
 #include "shared_state.h"
+#include "state_feedback.h"
+#include "state_feedback_settings.h"
 #include "../../include/config.h"
 
 namespace {
@@ -73,9 +75,15 @@ int shadowPidOutput = 0;
 char shadowStatus[80] = "Boot";
 bool balanceControlEnabled = false;
 bool balanceEnableRequested = false;
+bool autoStartPending = Config::AUTO_START_CONTROL_ENABLED;
+unsigned long autoStartStableStartMs = 0;
+unsigned long autoStartStableMs = 0;
 double targetBalanceSetpointDeg = 0.0;
 bool controlSettingsSaved = true;
 char controlSettingsMessage[48] = "loaded";
+bool stateCalibrationWizardActive = false;
+uint8_t stateCalibrationStage = 0;
+StateFeedbackSettings::Settings stateCalibrationSnapshot{};
 bool benchTestArmed = false;
 bool benchTestActive = false;
 int benchLeftPwm = 0;
@@ -655,6 +663,12 @@ void setControlSettingsResult(bool saved, const char *message) {
   strlcpy(controlSettingsMessage, message, sizeof(controlSettingsMessage));
 }
 
+void applyStateFeedbackSettings(const StateFeedbackSettings::Settings &settings) {
+  StateFeedback::setGains(settings.gains);
+  StateFeedback::setFilters(settings.velocityFilterBeta,
+                            settings.angularAccelerationFilterBeta);
+}
+
 const char *benchCommandName(int leftPwm, int rightPwm) {
   if (leftPwm > 0 && rightPwm == 0) return "left positive";
   if (leftPwm < 0 && rightPwm == 0) return "left negative";
@@ -766,6 +780,33 @@ void fillRawImuState() {
   state.controlSettingsSaved = controlSettingsSaved;
   strlcpy(state.controlSettingsMessage, controlSettingsMessage,
           sizeof(state.controlSettingsMessage));
+  const StateFeedback::State feedbackState = StateFeedback::getState();
+  const StateFeedback::Gains feedbackGains = StateFeedback::getGains();
+  state.statePosition = feedbackState.position;
+  state.stateRawVelocity = feedbackState.rawVelocity;
+  state.stateVelocity = feedbackState.velocity;
+  state.stateAngleError = feedbackState.angleError;
+  state.stateAngularVelocity = feedbackState.angularVelocity;
+  state.stateRawAngularAcceleration = feedbackState.rawAngularAcceleration;
+  state.stateAngularAcceleration = feedbackState.angularAcceleration;
+  state.statePositionTerm = feedbackState.positionTerm;
+  state.stateVelocityTerm = feedbackState.velocityTerm;
+  state.stateAngleTerm = feedbackState.angleTerm;
+  state.stateAngularVelocityTerm = feedbackState.angularVelocityTerm;
+  state.stateAngularAccelerationTerm = feedbackState.angularAccelerationTerm;
+  state.stateOutputBeforeLimit = feedbackState.outputBeforeLimit;
+  state.stateOutputSaturated = feedbackState.saturated;
+  state.stateSaturationCorrection = feedbackState.saturationCorrection;
+  state.stateGainPosition = feedbackGains.position;
+  state.stateGainVelocity = feedbackGains.velocity;
+  state.stateGainAngle = feedbackGains.angle;
+  state.stateGainAngularVelocity = feedbackGains.angularVelocity;
+  state.stateGainAngularAcceleration = feedbackGains.angularAcceleration;
+  state.stateVelocityFilterBeta = StateFeedback::getVelocityFilterBeta();
+  state.stateAngularAccelerationFilterBeta =
+      StateFeedback::getAngularAccelerationFilterBeta();
+  state.stateCalibrationWizardActive = stateCalibrationWizardActive;
+  state.stateCalibrationStage = stateCalibrationStage;
   state.benchTestArmed = benchTestArmed;
   state.benchTestActive = benchTestActive;
   state.benchArmRemainingMs = benchTestArmed && static_cast<long>(benchArmExpiresMs - millis()) > 0
@@ -774,14 +815,14 @@ void fillRawImuState() {
   state.benchWatchdogAgeMs = benchTestActive ? millis() - benchLastHeartbeatMs : 0;
   strlcpy(state.benchTestCommand, benchTestCommand, sizeof(state.benchTestCommand));
   state.pidSetpoint = BalancePid::getSetpoint();
-  state.pidInput = BalancePid::getInput();
-  state.pidError = BalancePid::getError();
-  state.pidOutput = BalancePid::getOutputRaw();
-  state.pidPTerm = BalancePid::getPTerm();
-  state.pidITerm = BalancePid::getITerm();
-  state.pidDTerm = BalancePid::getDTerm();
-  state.pidOutputBeforeLimit = BalancePid::getOutputBeforeLimit();
-  state.pidOutputAfterLimit = BalancePid::getOutputAfterLimit();
+  state.pidInput = imu.relativePitchDeg;
+  state.pidError = -feedbackState.angleError;
+  state.pidOutput = feedbackState.output;
+  state.pidPTerm = feedbackState.angleTerm;
+  state.pidITerm = feedbackState.positionTerm + feedbackState.velocityTerm;
+  state.pidDTerm = feedbackState.angularVelocityTerm + feedbackState.angularAccelerationTerm;
+  state.pidOutputBeforeLimit = feedbackState.outputBeforeLimit;
+  state.pidOutputAfterLimit = feedbackState.output;
   state.pidKp = BalancePid::getKp();
   state.pidKi = BalancePid::getKi();
   state.pidKd = BalancePid::getKd();
@@ -797,7 +838,13 @@ void fillRawImuState() {
   state.motorsEnabled = balanceControlEnabled;
   state.safetyStop = !balanceControlEnabled;
   state.safetyFault = !shadowControlReady;
-  state.autoRecoveryEnabled = false;
+  state.autoRecoveryEnabled = Config::AUTO_START_CONTROL_ENABLED;
+  state.autoRecoveryWaiting = autoStartPending && !balanceControlEnabled;
+  state.autoRecoveryCalibrating = false;
+  state.autoRecoveryStableMs = autoStartStableMs;
+  strlcpy(state.autoRecoveryState,
+          balanceControlEnabled ? "Running" : (autoStartPending ? "Waiting" : "Disabled"),
+          sizeof(state.autoRecoveryState));
   state.rawLeftEncoder = EncodersTest::rawLeftCount();
   state.rawRightEncoder = EncodersTest::rawRightCount();
   state.correctedLeftEncoder = EncodersTest::leftCount();
@@ -808,7 +855,7 @@ void fillRawImuState() {
   state.speedDifference = speedDifference;
   state.leftPwm = MotorsTest::getLeftPwm();
   state.rightPwm = MotorsTest::getRightPwm();
-  state.balancePwm = 0;
+  state.balancePwm = balancePwm;
   state.otaAvailable = previousState.otaAvailable;
   state.otaUpdating = previousState.otaUpdating;
   strlcpy(state.faultMessage, shadowStatus, sizeof(state.faultMessage));
@@ -828,10 +875,14 @@ void handleRawImuCommand(const RobotCommand &command) {
     stopBenchTest(true, "stopped by OTA");
   }
   if (command.stopMotors || command.disableMotors) {
+    autoStartStableStartMs = 0;
+    autoStartStableMs = 0;
     stopBenchTest(true, command.stopMotors ? "global stop" : "motors disabled");
     stopMpu9250Balance(command.stopMotors ? "PID stopped" : "PID disabled");
   }
   if (command.enableMotors && !command.stopMotors && !command.disableMotors) {
+    autoStartStableStartMs = 0;
+    autoStartStableMs = 0;
     stopBenchTest(true, "disarmed by PID");
     balanceEnableRequested = true;
   }
@@ -842,6 +893,8 @@ void handleRawImuCommand(const RobotCommand &command) {
   if (command.calibrateVertical) Imu9250::saveVertical();
   if (command.clearImuCalibration) Imu9250::clearCalibration();
   if (command.resetEncoders) {
+    stopBenchTest(true, "encoders reset");
+    stopMpu9250Balance("Control disabled: encoders reset");
     EncodersTest::reset();
     previousLeftEncoder = 0;
     previousRightEncoder = 0;
@@ -850,24 +903,77 @@ void handleRawImuCommand(const RobotCommand &command) {
     averageSpeed = 0.0f;
     speedDifference = 0.0f;
     previousEncoderMs = millis();
+    const Imu9250::RawSample imu = Imu9250::getSample();
+    StateFeedback::reset(0, 0, imu.correctedGyDps);
+  }
+  if (command.startStateCalibrationWizard) {
+    stopBenchTest(true, "wizard started");
+    stopMpu9250Balance("Control disabled: calibration wizard");
+    if (!stateCalibrationWizardActive) {
+      stateCalibrationSnapshot = StateFeedbackSettings::get();
+      const bool saved = StateFeedbackSettings::saveSnapshot(stateCalibrationSnapshot);
+      setControlSettingsResult(saved, saved ? "Wizard snapshot saved" : "Snapshot save failed");
+    }
+    stateCalibrationWizardActive = true;
+    stateCalibrationStage = 0;
+  }
+  if (command.updateStateCalibrationStage) {
+    stopBenchTest(true, "wizard stage changed");
+    stopMpu9250Balance("Control disabled: wizard stage changed");
+    stateCalibrationWizardActive = true;
+    stateCalibrationStage = constrain(command.stateCalibrationStage, 0, 7);
+  }
+  if (command.restoreStateCalibrationSnapshot && stateCalibrationWizardActive) {
+    stopBenchTest(true, "wizard settings restored");
+    stopMpu9250Balance("Control disabled: settings restored");
+    StateFeedbackSettings::Settings snapshot = stateCalibrationSnapshot;
+    const bool loaded = StateFeedbackSettings::loadSnapshot(snapshot);
+    const bool saved = loaded && StateFeedbackSettings::save(snapshot);
+    setControlSettingsResult(saved, saved ? "State gains restored" : "Restore failed");
+    if (saved) {
+      stateCalibrationSnapshot = snapshot;
+      applyStateFeedbackSettings(snapshot);
+    }
+  } else if (command.updateStateFeedback) {
+    stopBenchTest(true, "state gains changed");
+    stopMpu9250Balance("Control disabled: state gains changed");
+    const StateFeedbackSettings::Settings requested = {
+        {command.stateGainPosition, command.stateGainVelocity, command.stateGainAngle,
+         command.stateGainAngularVelocity, command.stateGainAngularAcceleration},
+        command.stateVelocityFilterBeta, command.stateAngularAccelerationFilterBeta};
+    const bool saved = StateFeedbackSettings::save(requested);
+    setControlSettingsResult(saved, saved ? "State gains saved" : "State gains save failed");
+    if (saved) applyStateFeedbackSettings(requested);
+  }
+  if (command.finishStateCalibrationWizard) {
+    stopBenchTest(true, "wizard completed");
+    stopMpu9250Balance("Control disabled: calibration completed");
+    stateCalibrationStage = 7;
+    stateCalibrationWizardActive = false;
   }
   if (command.updatePidTunings) {
+    stopBenchTest(true, "tunings changed");
     stopMpu9250Balance("PID disabled: tunings changed");
     const bool saved = ControlSettings::savePid(command.pidKp, command.pidKi, command.pidKd);
     setControlSettingsResult(saved, saved ? "PID saved" : "PID save failed");
     if (saved) BalancePid::setTunings(command.pidKp, command.pidKi, command.pidKd);
   }
   if (command.updatePidSetpoint) {
+    stopBenchTest(true, "setpoint changed");
     stopMpu9250Balance("PID disabled: setpoint changed");
     const bool saved = ControlSettings::saveSetpoint(command.pidSetpoint);
     setControlSettingsResult(saved, saved ? "Setpoint saved" : "Setpoint save failed");
     if (saved) targetBalanceSetpointDeg = command.pidSetpoint;
   }
   if (command.updatePidMaxPwm) {
+    stopBenchTest(true, "PWM limit changed");
     stopMpu9250Balance("PID disabled: PWM limit changed");
     const bool saved = ControlSettings::savePidMaxPwm(command.pidMaxPwm);
     setControlSettingsResult(saved, saved ? "PID PWM saved" : "PID PWM save failed");
-    if (saved) BalancePid::setOutputLimit(command.pidMaxPwm);
+    if (saved) {
+      BalancePid::setOutputLimit(command.pidMaxPwm);
+      StateFeedback::setOutputLimit(command.pidMaxPwm);
+    }
   }
   if (command.updateMotorPwmLimits) {
     stopMpu9250Balance("PID disabled: motor limits changed");
@@ -929,16 +1035,43 @@ void updateShadowControl() {
   else if (fabsf(imu.relativePitchDeg) > Config::MAX_SAFE_ANGLE_DEG) blockReason = "unsafe pitch";
   else if (fabs(targetBalanceSetpointDeg - imu.relativePitchDeg) > Config::MAX_SAFE_ANGLE_DEG)
     blockReason = "unsafe PID error";
+  float measuredDtSeconds = static_cast<float>(Config::CONTROL_TASK_PERIOD_MS) / 1000.0f;
+  if (previousControlMs != 0 && now > previousControlMs)
+    measuredDtSeconds = static_cast<float>(now - previousControlMs) / 1000.0f;
+  if ((measuredDtSeconds <= 0.0f || measuredDtSeconds > 0.1f) && blockReason == nullptr)
+    blockReason = "control timing overrun";
   shadowControlReady = blockReason == nullptr;
-
-  float dtSeconds = static_cast<float>(Config::CONTROL_TASK_PERIOD_MS) / 1000.0f;
-  if (previousControlMs != 0 && now > previousControlMs) dtSeconds = static_cast<float>(now - previousControlMs) / 1000.0f;
-  if (dtSeconds <= 0.0f || dtSeconds > 0.1f)
-    dtSeconds = static_cast<float>(Config::CONTROL_TASK_PERIOD_MS) / 1000.0f;
+  const float dtSeconds = measuredDtSeconds <= 0.0f || measuredDtSeconds > 0.1f
+                              ? static_cast<float>(Config::CONTROL_TASK_PERIOD_MS) / 1000.0f
+                              : measuredDtSeconds;
   previousControlMs = now;
   const double setpointStep = Config::PID_SETPOINT_SLEW_DEG_PER_SEC * dtSeconds;
   const double setpointDelta = targetBalanceSetpointDeg - BalancePid::getSetpoint();
   BalancePid::setSetpoint(BalancePid::getSetpoint() + constrain(setpointDelta, -setpointStep, setpointStep));
+  const float safePitchDeg = isfinite(imu.relativePitchDeg) ? imu.relativePitchDeg : 0.0f;
+  const float safeGyroDps = isfinite(imu.correctedGyDps) ? imu.correctedGyDps : 0.0f;
+  StateFeedback::update(EncodersTest::leftCount(), EncodersTest::rightCount(),
+                        safePitchDeg, BalancePid::getSetpoint(), safeGyroDps,
+                        measuredDtSeconds);
+
+  const bool autoStartReady = autoStartPending && !balanceControlEnabled &&
+                              !balanceEnableRequested && blockReason == nullptr &&
+                              !benchTestArmed && !benchTestActive &&
+                              !stateCalibrationWizardActive &&
+                              fabsf(averageSpeed) <= Config::STATE_ARM_MAX_SPEED_COUNTS_PER_SEC &&
+                              fabs(BalancePid::getSetpoint() - imu.relativePitchDeg) <=
+                                  Config::AUTO_START_ANGLE_WINDOW_DEG;
+  if (autoStartReady) {
+    if (autoStartStableStartMs == 0) autoStartStableStartMs = now;
+    autoStartStableMs = now - autoStartStableStartMs;
+    if (autoStartStableMs >= Config::AUTO_START_STABLE_MS) {
+      autoStartStableMs = Config::AUTO_START_STABLE_MS;
+      balanceEnableRequested = true;
+    }
+  } else if (autoStartPending) {
+    autoStartStableStartMs = 0;
+    autoStartStableMs = 0;
+  }
 
   bool enableRejected = false;
   if (balanceEnableRequested) {
@@ -949,12 +1082,25 @@ void updateShadowControl() {
     } else if (benchTestArmed || benchTestActive) {
       strlcpy(shadowStatus, "PID blocked: bench test armed", sizeof(shadowStatus));
       enableRejected = true;
+    } else if (fabsf(averageSpeed) > Config::STATE_ARM_MAX_SPEED_COUNTS_PER_SEC) {
+      strlcpy(shadowStatus, "Control blocked: wheels moving", sizeof(shadowStatus));
+      enableRejected = true;
     } else if (fabs(BalancePid::getSetpoint() - imu.relativePitchDeg) >
                Config::PID_ARM_MAX_ERROR_DEG) {
       strlcpy(shadowStatus, "PID blocked: move near setpoint", sizeof(shadowStatus));
       enableRejected = true;
     } else {
+      EncodersTest::reset();
+      previousLeftEncoder = 0;
+      previousRightEncoder = 0;
+      leftSpeed = 0.0f;
+      rightSpeed = 0.0f;
+      averageSpeed = 0.0f;
+      speedDifference = 0.0f;
+      previousEncoderMs = now;
+      StateFeedback::reset(0, 0, imu.correctedGyDps);
       balanceControlEnabled = true;
+      autoStartStableStartMs = 0;
       motorsEnabled = true;
       safetyStop = false;
       safetyFault = false;
@@ -970,11 +1116,7 @@ void updateShadowControl() {
     }
   }
 
-  const float safePitchDeg = isfinite(imu.relativePitchDeg) ? imu.relativePitchDeg : 0.0f;
-  const float safeGyroDps = isfinite(imu.correctedGyDps) ? imu.correctedGyDps : 0.0f;
-  BalancePid::update(safePitchDeg, safeGyroDps, dtSeconds,
-                     balanceControlEnabled, !balanceControlEnabled);
-  shadowPidOutput = BalancePid::getOutput();
+  shadowPidOutput = StateFeedback::getState().output;
   if (balanceControlEnabled) {
     balancePwm = shadowPidOutput;
     finalLeftPwm = shadowPidOutput;
@@ -991,6 +1133,21 @@ void updateShadowControl() {
       snprintf(shadowStatus, sizeof(shadowStatus), "PID blocked: %s", blockReason);
     } else if (!enableRejected && strcmp(shadowStatus, "Boot") == 0) {
       strlcpy(shadowStatus, "PID ready: disabled", sizeof(shadowStatus));
+    }
+    if (autoStartPending && blockReason == nullptr) {
+      if (autoStartStableStartMs != 0) {
+        const float remainingSeconds =
+            static_cast<float>(Config::AUTO_START_STABLE_MS - autoStartStableMs) / 1000.0f;
+        snprintf(shadowStatus, sizeof(shadowStatus), "Auto start in %.1f s", remainingSeconds);
+      } else if (benchTestArmed || benchTestActive) {
+        strlcpy(shadowStatus, "Auto start blocked: bench test", sizeof(shadowStatus));
+      } else if (stateCalibrationWizardActive) {
+        strlcpy(shadowStatus, "Auto start blocked: wizard", sizeof(shadowStatus));
+      } else if (fabsf(averageSpeed) > Config::STATE_ARM_MAX_SPEED_COUNTS_PER_SEC) {
+        strlcpy(shadowStatus, "Auto start: stop wheels", sizeof(shadowStatus));
+      } else {
+        strlcpy(shadowStatus, "Auto start: move near setpoint", sizeof(shadowStatus));
+      }
     }
   }
 }
@@ -1424,9 +1581,16 @@ void begin() {
     BalancePid::setSetpoint(settings.setpoint);
     BalancePid::setOutputLimit(settings.pidMaxPwm);
     BalancePid::setIntegralEnabled(true);
+    StateFeedbackSettings::begin(settings.kp, settings.kd);
+    const StateFeedbackSettings::Settings feedbackSettings =
+        StateFeedbackSettings::get();
+    StateFeedback::begin(feedbackSettings.gains,
+                         feedbackSettings.velocityFilterBeta,
+                         feedbackSettings.angularAccelerationFilterBeta,
+                         settings.pidMaxPwm);
     previousControlMs = millis();
     fillRawImuState();
-    Serial.println(F("Safe dashboard mode active: PID output blocked, bench tests require arming"));
+    Serial.println(F("MPU9250 state feedback ready; automatic activation enabled"));
     return;
   }
   EncodersTest::begin();
