@@ -579,7 +579,14 @@ void onWebSocketEvent(uint8_t clientId, WStype_t type, uint8_t *payload, size_t 
 }
 
 void startNetwork() {
-  WiFi.mode(WIFI_STA); WiFi.begin(Config::WIFI_SSID, Config::WIFI_PASSWORD);
+  WiFi.mode(WIFI_STA);
+  if (!WiFi.config(Config::WIFI_LOCAL_IP,
+                   Config::WIFI_GATEWAY,
+                   Config::WIFI_SUBNET,
+                   Config::WIFI_DNS)) {
+    Serial.println(F("Failed to configure static WiFi IP"));
+  }
+  WiFi.begin(Config::WIFI_SSID, Config::WIFI_PASSWORD);
   const unsigned long startMs = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - startMs < Config::WIFI_CONNECT_TIMEOUT_MS) delay(250);
   if (WiFi.status() == WL_CONNECTED) { Serial.print(F("Dashboard: http://")); Serial.println(WiFi.localIP()); ota_begin(Config::OTA_HOSTNAME, Config::OTA_PASSWORD); }

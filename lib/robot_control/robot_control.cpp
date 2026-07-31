@@ -935,8 +935,6 @@ void handleRawImuCommand(const RobotCommand &command) {
       applyStateFeedbackSettings(snapshot);
     }
   } else if (command.updateStateFeedback) {
-    stopBenchTest(true, "state gains changed");
-    stopMpu9250Balance("Control disabled: state gains changed");
     const StateFeedbackSettings::Settings requested = {
         {command.stateGainPosition, command.stateGainVelocity, command.stateGainAngle,
          command.stateGainAngularVelocity, command.stateGainAngularAcceleration},
@@ -944,6 +942,7 @@ void handleRawImuCommand(const RobotCommand &command) {
     const bool saved = StateFeedbackSettings::save(requested);
     setControlSettingsResult(saved, saved ? "State gains saved" : "State gains save failed");
     if (saved) applyStateFeedbackSettings(requested);
+    previousControlMs = millis();
   }
   if (command.finishStateCalibrationWizard) {
     stopBenchTest(true, "wizard completed");
@@ -952,37 +951,33 @@ void handleRawImuCommand(const RobotCommand &command) {
     stateCalibrationWizardActive = false;
   }
   if (command.updatePidTunings) {
-    stopBenchTest(true, "tunings changed");
-    stopMpu9250Balance("PID disabled: tunings changed");
     const bool saved = ControlSettings::savePid(command.pidKp, command.pidKi, command.pidKd);
     setControlSettingsResult(saved, saved ? "PID saved" : "PID save failed");
     if (saved) BalancePid::setTunings(command.pidKp, command.pidKi, command.pidKd);
+    previousControlMs = millis();
   }
   if (command.updatePidSetpoint) {
-    stopBenchTest(true, "setpoint changed");
-    stopMpu9250Balance("PID disabled: setpoint changed");
     const bool saved = ControlSettings::saveSetpoint(command.pidSetpoint);
     setControlSettingsResult(saved, saved ? "Setpoint saved" : "Setpoint save failed");
     if (saved) targetBalanceSetpointDeg = command.pidSetpoint;
+    previousControlMs = millis();
   }
   if (command.updatePidMaxPwm) {
-    stopBenchTest(true, "PWM limit changed");
-    stopMpu9250Balance("PID disabled: PWM limit changed");
     const bool saved = ControlSettings::savePidMaxPwm(command.pidMaxPwm);
     setControlSettingsResult(saved, saved ? "PID PWM saved" : "PID PWM save failed");
     if (saved) {
       BalancePid::setOutputLimit(command.pidMaxPwm);
       StateFeedback::setOutputLimit(command.pidMaxPwm);
     }
+    previousControlMs = millis();
   }
   if (command.updateMotorPwmLimits) {
-    stopMpu9250Balance("PID disabled: motor limits changed");
-    stopBenchTest(true, "settings updated");
     const bool saved = ControlSettings::saveMotorConfig(
         command.motorLeftMinPwm, command.motorLeftMaxPwm,
         command.motorRightMinPwm, command.motorRightMaxPwm,
         command.motorLeftCompensation, command.motorRightCompensation);
     setControlSettingsResult(saved, saved ? "Motor limits saved" : "Motor limits save failed");
+    previousControlMs = millis();
   }
 
   if (command.disarmBenchTest) {
@@ -1300,6 +1295,7 @@ void handleCommand(const RobotCommand &command) {
   if (command.updatePidTunings) {
     BalancePid::setTunings(command.pidKp, command.pidKi, command.pidKd);
     ControlSettings::savePid(BalancePid::getKp(), BalancePid::getKi(), BalancePid::getKd());
+    previousControlMs = millis();
   }
 
   if (command.updatePidSetpoint) {
@@ -1312,11 +1308,11 @@ void handleCommand(const RobotCommand &command) {
   }
 
   if (command.updateMotorPwmLimits) {
-    enterRecoveryWaiting("Motor limits updated");
     ControlSettings::saveMotorConfig(command.motorLeftMinPwm, command.motorLeftMaxPwm,
                                      command.motorRightMinPwm, command.motorRightMaxPwm,
                                      command.motorLeftCompensation,
                                      command.motorRightCompensation);
+    previousControlMs = millis();
   }
 
   if (command.updateIntegralLimit) {

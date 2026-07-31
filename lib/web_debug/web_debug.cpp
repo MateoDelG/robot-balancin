@@ -631,7 +631,7 @@ const char PAGE[] PROGMEM = R"rawliteral(
   </section>
   <section class="sensor-section wide"><h2>Grafica de estados</h2>
     <canvas id="stateChart"></canvas>
-    <div class="actions"><button id="stateRecordToggle" onclick="toggleStateRecording()">Pausar registro</button><button onclick="clearStateHistory()">Limpiar</button><button class="ok" onclick="exportStateCsv()">Exportar CSV</button></div>
+    <div class="actions"><button id="stateRecordToggle" onclick="toggleStateRecording()">Iniciar registro</button><button onclick="clearStateHistory()">Limpiar</button><button class="ok" onclick="exportStateCsv()">Exportar CSV</button></div>
     <p>Ventana visible: ultimos 60 s. El CSV conserva hasta 10 minutos. Muestras registradas: <span id="stateSampleCount">0</span>.</p>
     <p>Cada estado usa una escala vertical independiente; los valores exportados no se normalizan.</p>
   </section>
@@ -878,7 +878,7 @@ const wizardStages = [
 const STATE_HISTORY_MAX = 6000;
 const STATE_CHART_SAMPLES = 600;
 let stateHistory = [];
-let stateRecording = true;
+let stateRecording = false;
 let stateRecordingStartMs = 0;
 let driveTimer = null;
 let benchTimer = null;
@@ -940,8 +940,8 @@ function captureStateSample(data){
   if(stateHistory.length>STATE_HISTORY_MAX)stateHistory.splice(0,stateHistory.length-STATE_HISTORY_MAX);
   setText('stateSampleCount',stateHistory.length,0);drawStateChart();
 }
-function toggleStateRecording(){stateRecording=!stateRecording;setText('stateRecordToggle',stateRecording?'Pausar registro':'Reanudar registro',0);}
-function clearStateHistory(){stateHistory=[];stateRecordingStartMs=Date.now();setText('stateSampleCount',0,0);drawStateChart();}
+function toggleStateRecording(){stateRecording=!stateRecording;if(stateRecording&&!stateRecordingStartMs)stateRecordingStartMs=Date.now();setText('stateRecordToggle',stateRecording?'Pausar registro':(stateHistory.length?'Reanudar registro':'Iniciar registro'),0);}
+function clearStateHistory(){stateHistory=[];stateRecordingStartMs=stateRecording?Date.now():0;setText('stateSampleCount',0,0);setText('stateRecordToggle',stateRecording?'Pausar registro':'Iniciar registro',0);drawStateChart();}
 function drawStateChart(){
   const canvas=document.getElementById('stateChart');if(!canvas)return;
   const cssWidth=Math.max(320,canvas.clientWidth||1200),cssHeight=420,dpr=window.devicePixelRatio||1;
@@ -1105,6 +1105,12 @@ void begin() {
   Serial.println(xPortGetCoreID());
 
   WiFi.mode(WIFI_STA);
+  if (!WiFi.config(Config::WIFI_LOCAL_IP,
+                   Config::WIFI_GATEWAY,
+                   Config::WIFI_SUBNET,
+                   Config::WIFI_DNS)) {
+    Serial.println(F("Failed to configure static WiFi IP"));
+  }
   WiFi.begin(Config::WIFI_SSID, Config::WIFI_PASSWORD);
   Serial.print(F("Connecting to WiFi SSID: "));
   Serial.println(Config::WIFI_SSID);
