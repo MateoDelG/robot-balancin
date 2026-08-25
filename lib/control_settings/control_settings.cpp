@@ -11,7 +11,7 @@ namespace {
 constexpr char NVS_NAMESPACE[] = "mpu9250ctl";
 constexpr char LEGACY_NAMESPACE[] = "controlcfg";
 constexpr char NVS_SETTINGS_KEY[] = "settings";
-constexpr uint32_t SETTINGS_VERSION = 2;
+constexpr uint32_t SETTINGS_VERSION = 3;
 
 struct StoredSettingsV1 {
   uint32_t version;
@@ -137,6 +137,18 @@ ControlSettings::Settings fromStored(const StoredSettings &stored) {
           stored.rightCompensation};
 }
 
+ControlSettings::Settings scaleLegacySettings(ControlSettings::Settings settings) {
+  settings.kp = Config::scaleLegacyPwmGain(settings.kp);
+  settings.ki = Config::scaleLegacyPwmGain(settings.ki);
+  settings.kd = Config::scaleLegacyPwmGain(settings.kd);
+  settings.pidMaxPwm = Config::scaleLegacyPwm(settings.pidMaxPwm);
+  settings.leftMinPwm = Config::scaleLegacyPwm(settings.leftMinPwm);
+  settings.leftMaxPwm = Config::scaleLegacyPwm(settings.leftMaxPwm);
+  settings.rightMinPwm = Config::scaleLegacyPwm(settings.rightMinPwm);
+  settings.rightMaxPwm = Config::scaleLegacyPwm(settings.rightMaxPwm);
+  return settings;
+}
+
 bool writeSettings(const ControlSettings::Settings &settings) {
   if (!validSettings(settings)) return false;
   const StoredSettings stored = toStored(settings);
@@ -155,11 +167,13 @@ bool loadStoredSettings(ControlSettings::Settings &settings, bool &migrated) {
     StoredSettings stored{};
     const bool read = preferences.getBytes(NVS_SETTINGS_KEY, &stored, sizeof(stored)) == sizeof(stored);
     preferences.end();
-    if (!read || stored.version != SETTINGS_VERSION || stored.checksum != checksum(stored)) return false;
-    const ControlSettings::Settings candidate = fromStored(stored);
+    if (!read || stored.checksum != checksum(stored)) return false;
+    if (stored.version != 2 && stored.version != SETTINGS_VERSION) return false;
+    ControlSettings::Settings candidate = fromStored(stored);
+    if (stored.version == 2) candidate = scaleLegacySettings(candidate);
     if (!validSettings(candidate)) return false;
     settings = candidate;
-    migrated = false;
+    migrated = stored.version != SETTINGS_VERSION;
     return true;
   }
   if (storedLength == sizeof(StoredSettingsV1)) {
@@ -171,6 +185,7 @@ bool loadStoredSettings(ControlSettings::Settings &settings, bool &migrated) {
         stored.kp, stored.ki, stored.kd, stored.setpoint, stored.pidMaxPwm,
         stored.leftMinPwm, stored.leftMaxPwm, stored.rightMinPwm, stored.rightMaxPwm,
         Config::INITIAL_MOTOR_LEFT_COMPENSATION, Config::INITIAL_MOTOR_RIGHT_COMPENSATION};
+    candidate = scaleLegacySettings(candidate);
     if (!validSettings(candidate)) return false;
     settings = candidate;
     migrated = true;
@@ -193,15 +208,15 @@ void migrateLegacySettings(ControlSettings::Settings &settings) {
   preferences.end();
 
   ControlSettings::Settings candidate = settings;
-  if (validPid(kp, ki, kd)) {
-    candidate.kp = kp;
-    candidate.ki = ki;
-    candidate.kd = kd;
+  if (isfinite(kp) && isfinite(ki) && isfinite(kd)) {
+    candidate.kp = Config::scaleLegacyPwmGain(kp);
+    candidate.ki = Config::scaleLegacyPwmGain(ki);
+    candidate.kd = Config::scaleLegacyPwmGain(kd);
   }
-  candidate.leftMinPwm = leftMinPwm;
-  candidate.leftMaxPwm = leftMaxPwm;
-  candidate.rightMinPwm = rightMinPwm;
-  candidate.rightMaxPwm = rightMaxPwm;
+  candidate.leftMinPwm = Config::scaleLegacyPwm(leftMinPwm);
+  candidate.leftMaxPwm = Config::scaleLegacyPwm(leftMaxPwm);
+  candidate.rightMinPwm = Config::scaleLegacyPwm(rightMinPwm);
+  candidate.rightMaxPwm = Config::scaleLegacyPwm(rightMaxPwm);
   if (validSettings(candidate)) settings = candidate;
 }
 

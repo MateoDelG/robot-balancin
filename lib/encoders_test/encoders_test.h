@@ -12,5 +12,8 @@ long rawLeftCount();
 long rawRightCount();
 long leftCount();
 long rightCount();
+float countsToMillimeters(float counts);
+float leftDistanceMm();
+float rightDistanceMm();
 
 }  // namespace EncodersTest

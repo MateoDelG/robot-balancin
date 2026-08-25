@@ -30,6 +30,9 @@ void begin() {
   rightEncoder.setFilter(1023);
   reset();
   Serial.println(F("Encoders initialized in full quadrature mode"));
+  Serial.printf("Encoder scale: %.2f counts/rev, %.6f mm/count, wheel %.1f mm\n",
+                Config::ENCODER_COUNTS_PER_WHEEL_REV,
+                Config::MM_PER_ENCODER_COUNT, Config::WHEEL_DIAMETER_MM);
 }
 
 void printCountsIfDue() {
@@ -74,6 +77,18 @@ long leftCount() {
 
 long rightCount() {
   return applyRightSign(rawRightCount());
+}
+
+float countsToMillimeters(float counts) {
+  return counts * static_cast<float>(Config::MM_PER_ENCODER_COUNT);
+}
+
+float leftDistanceMm() {
+  return countsToMillimeters(static_cast<float>(leftCount()));
+}
+
+float rightDistanceMm() {
+  return countsToMillimeters(static_cast<float>(rightCount()));
 }
 
 }  // namespace EncodersTest

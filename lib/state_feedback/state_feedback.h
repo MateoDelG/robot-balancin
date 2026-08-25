@@ -13,6 +13,7 @@ struct Gains {
 };
 
 struct State {
+  // Linear states use millimeters and millimeters per second.
   float position;
   float rawVelocity;
   float velocity;

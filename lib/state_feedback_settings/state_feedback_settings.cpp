@@ -10,7 +10,7 @@ namespace {
 constexpr char NVS_NAMESPACE[] = "statefb";
 constexpr char NVS_KEY[] = "settings";
 constexpr char NVS_SNAPSHOT_KEY[] = "snapshot";
-constexpr uint32_t VERSION = 1;
+constexpr uint32_t VERSION = 3;
 
 struct StoredSettings {
   uint32_t version;
@@ -68,6 +68,34 @@ StateFeedbackSettings::Settings decode(const StoredSettings &stored) {
           stored.filters[0], stored.filters[1]};
 }
 
+StateFeedbackSettings::Settings scaleLegacySettings(
+    StateFeedbackSettings::Settings settings) {
+  settings.gains.position = Config::scaleLegacyPwmGain(settings.gains.position);
+  settings.gains.velocity = Config::scaleLegacyPwmGain(settings.gains.velocity);
+  settings.gains.angle = Config::scaleLegacyPwmGain(settings.gains.angle);
+  settings.gains.angularVelocity =
+      Config::scaleLegacyPwmGain(settings.gains.angularVelocity);
+  settings.gains.angularAcceleration =
+      Config::scaleLegacyPwmGain(settings.gains.angularAcceleration);
+  return settings;
+}
+
+StateFeedbackSettings::Settings convertEncoderUnitsToMillimeters(
+    StateFeedbackSettings::Settings settings) {
+  settings.gains.position /= Config::MM_PER_ENCODER_COUNT;
+  settings.gains.velocity /= Config::MM_PER_ENCODER_COUNT;
+  return settings;
+}
+
+bool writeStored(const char *key, const StateFeedbackSettings::Settings &settings) {
+  const StoredSettings stored = encode(settings);
+  Preferences preferences;
+  if (!preferences.begin(NVS_NAMESPACE, false)) return false;
+  const bool success = preferences.putBytes(key, &stored, sizeof(stored)) == sizeof(stored);
+  preferences.end();
+  return success;
+}
+
 }  // namespace
 
 namespace StateFeedbackSettings {
@@ -82,9 +110,15 @@ void begin(double defaultAngleGain, double defaultAngularVelocityGain) {
   const bool loaded = preferences.getBytesLength(NVS_KEY) == sizeof(stored) &&
                       preferences.getBytes(NVS_KEY, &stored, sizeof(stored)) == sizeof(stored);
   preferences.end();
-  if (!loaded || stored.version != VERSION || stored.checksum != checksum(stored)) return;
-  const Settings candidate = decode(stored);
-  if (valid(candidate)) currentSettings = candidate;
+  if (!loaded || stored.checksum != checksum(stored) ||
+      (stored.version != 1 && stored.version != 2 && stored.version != VERSION)) return;
+  Settings candidate = decode(stored);
+  if (stored.version == 1) candidate = scaleLegacySettings(candidate);
+  if (stored.version <= 2) candidate = convertEncoderUnitsToMillimeters(candidate);
+  if (valid(candidate)) {
+    currentSettings = candidate;
+    if (stored.version != VERSION) writeStored(NVS_KEY, candidate);
+  }
 }
 
 Settings get() {
@@ -93,23 +127,14 @@ Settings get() {
 
 bool save(const Settings &settings) {
   if (!valid(settings)) return false;
-  const StoredSettings stored = encode(settings);
-  Preferences preferences;
-  if (!preferences.begin(NVS_NAMESPACE, false)) return false;
-  const bool success = preferences.putBytes(NVS_KEY, &stored, sizeof(stored)) == sizeof(stored);
-  preferences.end();
+  const bool success = writeStored(NVS_KEY, settings);
   if (success) currentSettings = settings;
   return success;
 }
 
 bool saveSnapshot(const Settings &settings) {
   if (!valid(settings)) return false;
-  const StoredSettings stored = encode(settings);
-  Preferences preferences;
-  if (!preferences.begin(NVS_NAMESPACE, false)) return false;
-  const bool success = preferences.putBytes(NVS_SNAPSHOT_KEY, &stored, sizeof(stored)) == sizeof(stored);
-  preferences.end();
-  return success;
+  return writeStored(NVS_SNAPSHOT_KEY, settings);
 }
 
 bool loadSnapshot(Settings &settings) {
@@ -119,8 +144,11 @@ bool loadSnapshot(Settings &settings) {
   const bool loaded = preferences.getBytesLength(NVS_SNAPSHOT_KEY) == sizeof(stored) &&
                       preferences.getBytes(NVS_SNAPSHOT_KEY, &stored, sizeof(stored)) == sizeof(stored);
   preferences.end();
-  if (!loaded || stored.version != VERSION || stored.checksum != checksum(stored)) return false;
-  const Settings candidate = decode(stored);
+  if (!loaded || stored.checksum != checksum(stored) ||
+      (stored.version != 1 && stored.version != 2 && stored.version != VERSION)) return false;
+  Settings candidate = decode(stored);
+  if (stored.version == 1) candidate = scaleLegacySettings(candidate);
+  if (stored.version <= 2) candidate = convertEncoderUnitsToMillimeters(candidate);
   if (!valid(candidate)) return false;
   settings = candidate;
   return true;

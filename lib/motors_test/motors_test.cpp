@@ -58,12 +58,22 @@ void begin() {
   pinMode(Config::PIN_MOTOR_RIGHT_IN1, OUTPUT);
   pinMode(Config::PIN_MOTOR_RIGHT_IN2, OUTPUT);
 
-  ledcSetup(Config::PWM_CHANNEL_MOTOR_LEFT, Config::PWM_FREQUENCY_HZ,
-            Config::PWM_RESOLUTION_BITS);
-  ledcSetup(Config::PWM_CHANNEL_MOTOR_RIGHT, Config::PWM_FREQUENCY_HZ,
-            Config::PWM_RESOLUTION_BITS);
+  const double leftFrequency =
+      ledcSetup(Config::PWM_CHANNEL_MOTOR_LEFT, Config::PWM_FREQUENCY_HZ,
+                Config::PWM_RESOLUTION_BITS);
+  const double rightFrequency =
+      ledcSetup(Config::PWM_CHANNEL_MOTOR_RIGHT, Config::PWM_FREQUENCY_HZ,
+                Config::PWM_RESOLUTION_BITS);
   ledcAttachPin(Config::PIN_MOTOR_LEFT_ENABLE_PWM, Config::PWM_CHANNEL_MOTOR_LEFT);
   ledcAttachPin(Config::PIN_MOTOR_RIGHT_ENABLE_PWM, Config::PWM_CHANNEL_MOTOR_RIGHT);
+
+  Serial.printf("Motor PWM: requested=%lu Hz, resolution=%u bits, max=%d, actual L/R=%.0f/%.0f Hz\n",
+                static_cast<unsigned long>(Config::PWM_FREQUENCY_HZ),
+                Config::PWM_RESOLUTION_BITS, Config::PWM_MAX_DUTY,
+                leftFrequency, rightFrequency);
+  if (leftFrequency <= 0.0 || rightFrequency <= 0.0) {
+    Serial.println(F("ERROR: motor PWM configuration failed"));
+  }
 
   disable();
 }

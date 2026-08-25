@@ -78,6 +78,7 @@ struct RobotState {
   double pidTargetSetpoint = 0.0;
   bool controlSettingsSaved = true;
   char controlSettingsMessage[48] = "loaded";
+  float statePositionCounts = 0.0f;
   float statePosition = 0.0f;
   float stateRawVelocity = 0.0f;
   float stateVelocity = 0.0f;
@@ -120,10 +121,16 @@ struct RobotState {
   long rawRightEncoder = 0;
   long correctedLeftEncoder = 0;
   long correctedRightEncoder = 0;
+  float leftDistanceMm = 0.0f;
+  float rightDistanceMm = 0.0f;
   float leftSpeed = 0.0f;
   float rightSpeed = 0.0f;
   float speedAverage = 0.0f;
   float speedDifference = 0.0f;
+  float leftSpeedMmPerSec = 0.0f;
+  float rightSpeedMmPerSec = 0.0f;
+  float speedAverageMmPerSec = 0.0f;
+  float speedDifferenceMmPerSec = 0.0f;
   float encoderSyncError = 0.0f;
   int encoderSyncCorrection = 0;
   bool encoderSyncEnabled = false;

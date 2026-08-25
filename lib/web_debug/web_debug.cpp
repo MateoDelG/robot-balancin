@@ -118,8 +118,17 @@ String stateAsJson() {
   doc["shadowDirection"] = state.shadowDirection;
   doc["balanceControlEnabled"] = state.balanceControlEnabled;
   doc["targetSetpoint"] = state.pidTargetSetpoint;
+  doc["pwmFrequencyHz"] = Config::PWM_FREQUENCY_HZ;
+  doc["pwmResolutionBits"] = Config::PWM_RESOLUTION_BITS;
+  doc["pwmFullScale"] = Config::PWM_MAX_DUTY;
+  doc["wheelDiameterMm"] = Config::WHEEL_DIAMETER_MM;
+  doc["wheelCircumferenceMm"] = Config::WHEEL_CIRCUMFERENCE_MM;
+  doc["encoderCountsPerWheelRev"] = Config::ENCODER_COUNTS_PER_WHEEL_REV;
+  doc["mmPerEncoderCount"] = Config::MM_PER_ENCODER_COUNT;
+  doc["wheelMaxSpeedMmPerSec"] = Config::WHEEL_MAX_SPEED_MM_PER_SEC;
   doc["controlSettingsSaved"] = state.controlSettingsSaved;
   doc["controlSettingsMessage"] = state.controlSettingsMessage;
+  doc["statePositionCounts"] = state.statePositionCounts;
   doc["statePosition"] = state.statePosition;
   doc["stateRawVelocity"] = state.stateRawVelocity;
   doc["stateVelocity"] = state.stateVelocity;
@@ -153,10 +162,16 @@ String stateAsJson() {
   doc["rightEncoder"] = state.correctedRightEncoder;
   doc["rawLeftEncoder"] = state.rawLeftEncoder;
   doc["rawRightEncoder"] = state.rawRightEncoder;
+  doc["leftDistanceMm"] = state.leftDistanceMm;
+  doc["rightDistanceMm"] = state.rightDistanceMm;
   doc["leftSpeed"] = state.leftSpeed;
   doc["rightSpeed"] = state.rightSpeed;
   doc["speedAverage"] = state.speedAverage;
   doc["speedDifference"] = state.speedDifference;
+  doc["leftSpeedMmPerSec"] = state.leftSpeedMmPerSec;
+  doc["rightSpeedMmPerSec"] = state.rightSpeedMmPerSec;
+  doc["speedAverageMmPerSec"] = state.speedAverageMmPerSec;
+  doc["speedDifferenceMmPerSec"] = state.speedDifferenceMmPerSec;
   doc["encoderSyncTargetDifference"] = state.encoderSyncTargetDifference;
   doc["encoderSyncError"] = state.encoderSyncError;
   doc["encoderSyncCorrection"] = state.encoderSyncCorrection;
@@ -593,13 +608,14 @@ const char PAGE[] PROGMEM = R"rawliteral(
       <div class="item"><div class="label">Pitch relativo vertical</div><div class="value" id="imuRelativePitchDeg">--</div></div>
       <div class="item"><div class="label">Rumbo compensado</div><div class="value" id="imuHeadingDeg">--</div></div>
     </div>
-    <p>La entrada de equilibrio es <b>pitch relativo</b> con velocidad <b>GY</b>. Los motores solo reciben la salida cuando el PID se activa explicitamente.</p>
+    <p>La entrada de equilibrio es <b>pitch relativo</b> con velocidad <b>GY</b>. El control se activa automaticamente tras cumplir las condiciones de armado.</p>
   </section>
   <section class="sensor-section wide"><h2>Realimentacion de estados</h2>
     <div class="sensor-status" id="shadowStatus">Esperando estado</div>
     <div class="grid">
-      <div class="item"><div class="label">Posicion (cuentas)</div><div class="value" id="statePosition">--</div></div>
-      <div class="item"><div class="label">Velocidad cruda / filtrada</div><div class="value"><span id="stateRawVelocity">--</span> / <span id="stateVelocity">--</span></div></div>
+      <div class="item"><div class="label">Posicion (mm)</div><div class="value" id="statePosition">--</div></div>
+      <div class="item"><div class="label">Posicion (cuentas)</div><div class="value" id="statePositionCounts">--</div></div>
+      <div class="item"><div class="label">Velocidad cruda / filtrada (mm/s)</div><div class="value"><span id="stateRawVelocity">--</span> / <span id="stateVelocity">--</span></div></div>
       <div class="item"><div class="label">Error angular</div><div class="value" id="stateAngleError">--</div></div>
       <div class="item"><div class="label">Velocidad angular</div><div class="value" id="stateAngularVelocity">--</div></div>
       <div class="item"><div class="label">Acel. angular cruda / filtrada</div><div class="value"><span id="stateRawAngularAcceleration">--</span> / <span id="stateAngularAcceleration">--</span></div></div>
@@ -612,10 +628,12 @@ const char PAGE[] PROGMEM = R"rawliteral(
       <div class="item"><div class="label">Edad muestra</div><div class="value"><span id="shadowSampleAge">--</span> ms</div></div>
       <div class="item"><div class="label">Setpoint aplicado</div><div class="value" id="shadowAppliedSetpoint">--</div></div>
       <div class="item"><div class="label">Persistencia</div><div class="value" id="controlSettingsStatus">--</div></div>
+      <div class="item"><div class="label">PWM hardware</div><div class="value" id="pwmHardwareConfig">--</div></div>
+      <div class="item"><div class="label">Rueda / encoder</div><div class="value" id="encoderPhysicalConfig">--</div></div>
     </div>
     <div class="grid" style="margin-top:12px">
-      <label>Kx posicion<input id="stateGainPosition" type="number" step="0.0001"></label>
-      <label>Kv velocidad<input id="stateGainVelocity" type="number" step="0.0001"></label>
+      <label>Kx posicion (PWM/mm)<input id="stateGainPosition" type="number" step="0.0001"></label>
+      <label>Kv velocidad (PWM/(mm/s))<input id="stateGainVelocity" type="number" step="0.0001"></label>
       <label>Ktheta angulo<input id="stateGainAngle" type="number" step="0.1"></label>
       <label>Komega velocidad angular<input id="stateGainAngularVelocity" type="number" step="0.01"></label>
       <label>Kalpha aceleracion angular<input id="stateGainAngularAcceleration" type="number" step="0.0001"></label>
@@ -623,11 +641,11 @@ const char PAGE[] PROGMEM = R"rawliteral(
       <label>Beta aceleracion angular<input id="stateAngularAccelerationFilterBeta" type="number" min="0.01" max="1" step="0.01"></label>
     </div>
     <button onclick="applyStateFeedback()">Guardar ganancias y filtros</button>
-    <div class="grid" style="margin-top:12px"><label>Setpoint objetivo (-10 a 10)<input id="shadowSetpoint" type="number" step="0.01" min="-10" max="10"></label><label>Maximo PWM (0-255)<input id="shadowMaxPwm" type="number" step="1" min="0" max="255"></label></div>
+    <div class="grid" style="margin-top:12px"><label>Setpoint objetivo (-10 a 10)<input id="shadowSetpoint" type="number" step="0.01" min="-10" max="10"></label><label>Maximo PWM (0-2047)<input id="shadowMaxPwm" type="number" step="1" min="0" max="2047"></label></div>
     <button onclick="applyShadowControl()">Guardar setpoint y maximo PWM</button>
     <div class="actions"><button class="ok" onclick="enableBalance()">ACTIVAR CONTROL</button><button class="warn" onclick="disableBalance()">Desactivar control</button><button class="stop" onclick="stopBalance()">STOP</button></div>
-    <p>Al activar se ponen los encoders en cero. Cambiar ganancias, filtros, setpoint o limites desactiva el control.</p>
-    <p><b>Advertencia:</b> 255 PWM permite potencia completa.</p>
+    <p>Al activar se ponen los encoders en cero. Ganancias, filtros, setpoint y limites se aplican con el control activo.</p>
+    <p><b>Advertencia:</b> 2047 PWM permite potencia completa.</p>
   </section>
   <section class="sensor-section wide"><h2>Grafica de estados</h2>
     <canvas id="stateChart"></canvas>
@@ -646,14 +664,16 @@ const char PAGE[] PROGMEM = R"rawliteral(
     <div class="sensor-status" id="benchStatus">DESARMADA</div>
     <p><label><input id="benchConfirm" type="checkbox"> Confirmo que el robot esta firmemente soportado y las ruedas estan suspendidas.</label></p>
     <div class="grid">
-      <label>PWM de prueba (0-255)<input id="benchPwm" type="number" min="0" max="255" step="1" value="70"></label>
+      <label>PWM de prueba (0-2047)<input id="benchPwm" type="number" min="0" max="2047" step="1" value="562"></label>
       <div class="item"><div class="label">Armado restante</div><div class="value"><span id="benchRemaining">0</span> s</div></div>
       <div class="item"><div class="label">Watchdog</div><div class="value"><span id="benchWatchdog">0</span> ms</div></div>
       <div class="item"><div class="label">Comando</div><div class="value" id="benchCommand">stopped</div></div>
       <div class="item"><div class="label">PWM real L/R</div><div class="value"><span id="benchLeftPwm">0</span>/<span id="benchRightPwm">0</span></div></div>
-      <div class="item"><div class="label">Velocidad L/R</div><div class="value"><span id="benchLeftSpeed">0</span>/<span id="benchRightSpeed">0</span></div></div>
+      <div class="item"><div class="label">Velocidad L/R (mm/s)</div><div class="value"><span id="benchLeftSpeedMm">0</span>/<span id="benchRightSpeedMm">0</span></div></div>
+      <div class="item"><div class="label">Velocidad L/R (cuentas/s)</div><div class="value"><span id="benchLeftSpeed">0</span>/<span id="benchRightSpeed">0</span></div></div>
       <div class="item"><div class="label">Encoder crudo L/R</div><div class="value"><span id="benchRawLeft">0</span>/<span id="benchRawRight">0</span></div></div>
       <div class="item"><div class="label">Encoder corregido L/R</div><div class="value"><span id="benchCorrectedLeft">0</span>/<span id="benchCorrectedRight">0</span></div></div>
+      <div class="item"><div class="label">Distancia L/R (mm)</div><div class="value"><span id="benchLeftDistanceMm">0</span>/<span id="benchRightDistanceMm">0</span></div></div>
     </div>
     <div class="actions"><button id="benchArm" class="warn">Armar 30 s</button><button id="benchDisarm">Desarmar</button><button id="benchStop" class="stop">PARADA</button><button onclick="send({type:'reset_encoders'})">Poner encoders en 0</button></div>
     <div class="actions"><button class="bench-drive" id="benchLeftPositive">Izquierdo +</button><button class="bench-drive" id="benchLeftNegative">Izquierdo -</button><button class="bench-drive" id="benchRightPositive">Derecho +</button><button class="bench-drive" id="benchRightNegative">Derecho -</button><button class="bench-drive" id="benchBothPositive">Ambos +</button><button class="bench-drive" id="benchBothNegative">Ambos -</button></div>
@@ -662,15 +682,15 @@ const char PAGE[] PROGMEM = R"rawliteral(
   <section class="sensor-section wide"><h2>Limites PWM por motor</h2>
     <p>Todo comando no cero inferior al minimo se eleva al minimo. El maximo satura la salida. Guardar desarma la prueba de banco.</p>
     <div class="grid">
-      <label>Izquierdo minimo<input id="motorLeftMinPwm" type="number" min="0" max="255" step="1"></label>
-      <label>Izquierdo maximo<input id="motorLeftMaxPwm" type="number" min="0" max="255" step="1"></label>
-      <label>Derecho minimo<input id="motorRightMinPwm" type="number" min="0" max="255" step="1"></label>
-      <label>Derecho maximo<input id="motorRightMaxPwm" type="number" min="0" max="255" step="1"></label>
+      <label>Izquierdo minimo<input id="motorLeftMinPwm" type="number" min="0" max="2047" step="1"></label>
+      <label>Izquierdo maximo<input id="motorLeftMaxPwm" type="number" min="0" max="2047" step="1"></label>
+      <label>Derecho minimo<input id="motorRightMinPwm" type="number" min="0" max="2047" step="1"></label>
+      <label>Derecho maximo<input id="motorRightMaxPwm" type="number" min="0" max="2047" step="1"></label>
       <label>Compensacion izquierda<input id="motorLeftCompensation" type="number" min="0" max="2" step="0.01"></label>
       <label>Compensacion derecha<input id="motorRightCompensation" type="number" min="0" max="2" step="0.01"></label>
     </div>
     <button onclick="applyMotorLimits()">Guardar limites PWM</button>
-    <p>La salida de cada motor se multiplica por su compensacion antes de aplicar minimo y maximo. La prueba de banco permite hasta 255 PWM.</p>
+    <p>La salida de cada motor se multiplica por su compensacion antes de aplicar minimo y maximo. La prueba de banco permite hasta 2047 PWM.</p>
   </section>
   <section class="sensor-section"><h2>Acelerometro</h2><div class="grid">
     <div class="item"><div class="label">AX crudo / corregido</div><div class="value"><span id="imuRawAxG">--</span> / <span id="imuCorrectedAxG">--</span></div></div>
@@ -898,7 +918,7 @@ function setTurnDirection(direction){
   el.className='value '+(direction==='derecha'?'turn-right':(direction==='izquierda'?'turn-left':'turn-still'));
 }
 function send(obj){if(!ws || ws.readyState!==WebSocket.OPEN){alert('WebSocket no conectado');return;} ws.send(JSON.stringify(obj));}
-function benchPwm(){return Math.min(255,Math.max(0,Math.round(num('benchPwm')||0)));}
+function benchPwm(){return Math.min(2047,Math.max(0,Math.round(num('benchPwm')||0)));}
 function sendBenchHeartbeat(){if(ws&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify({type:'bench_drive',leftPwm:benchLeftCommand,rightPwm:benchRightCommand}));}
 function stopBench(){if(benchTimer){clearInterval(benchTimer);benchTimer=null;}benchLeftCommand=0;benchRightCommand=0;if(ws&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify({type:'bench_stop'}));}
 function startBench(leftSign,rightSign){
@@ -936,7 +956,7 @@ function finiteValue(value){return typeof value==='number'&&Number.isFinite(valu
 function captureStateSample(data){
   if(!stateRecording)return;
   const now=Date.now();if(!stateRecordingStartMs)stateRecordingStartMs=now;
-  stateHistory.push({elapsedMs:now-stateRecordingStartMs,epochMs:now,position:finiteValue(data.statePosition),rawVelocity:finiteValue(data.stateRawVelocity),velocity:finiteValue(data.stateVelocity),angleError:finiteValue(data.stateAngleError),angularVelocity:finiteValue(data.stateAngularVelocity),rawAngularAcceleration:finiteValue(data.stateRawAngularAcceleration),angularAcceleration:finiteValue(data.stateAngularAcceleration),ux:finiteValue(data.statePositionTerm),uv:finiteValue(data.stateVelocityTerm),utheta:finiteValue(data.stateAngleTerm),uomega:finiteValue(data.stateAngularVelocityTerm),ualpha:finiteValue(data.stateAngularAccelerationTerm),outputBeforeLimit:finiteValue(data.stateOutputBeforeLimit),output:finiteValue(data.shadowPidOutput),leftPwm:finiteValue(data.leftPwm),rightPwm:finiteValue(data.rightPwm),saturated:data.stateOutputSaturated?1:0,kx:finiteValue(data.stateGainPosition),kv:finiteValue(data.stateGainVelocity),ktheta:finiteValue(data.stateGainAngle),komega:finiteValue(data.stateGainAngularVelocity),kalpha:finiteValue(data.stateGainAngularAcceleration),velocityBeta:finiteValue(data.stateVelocityFilterBeta),angularAccelerationBeta:finiteValue(data.stateAngularAccelerationFilterBeta),setpoint:finiteValue(data.setpoint),targetSetpoint:finiteValue(data.targetSetpoint),maxPwm:finiteValue(data.maxPwm),controlPeriodMs:finiteValue(data.controlPeriodMs),leftMinPwm:finiteValue(data.motorLeftMinPwm),leftMaxPwm:finiteValue(data.motorLeftMaxPwm),rightMinPwm:finiteValue(data.motorRightMinPwm),rightMaxPwm:finiteValue(data.motorRightMaxPwm),leftCompensation:finiteValue(data.motorLeftCompensation),rightCompensation:finiteValue(data.motorRightCompensation)});
+  stateHistory.push({elapsedMs:now-stateRecordingStartMs,epochMs:now,position:finiteValue(data.statePosition),positionCounts:finiteValue(data.statePositionCounts),rawVelocity:finiteValue(data.stateRawVelocity),velocity:finiteValue(data.stateVelocity),leftEncoder:finiteValue(data.leftEncoder),rightEncoder:finiteValue(data.rightEncoder),leftDistanceMm:finiteValue(data.leftDistanceMm),rightDistanceMm:finiteValue(data.rightDistanceMm),leftSpeedMm:finiteValue(data.leftSpeedMmPerSec),rightSpeedMm:finiteValue(data.rightSpeedMmPerSec),angleError:finiteValue(data.stateAngleError),angularVelocity:finiteValue(data.stateAngularVelocity),rawAngularAcceleration:finiteValue(data.stateRawAngularAcceleration),angularAcceleration:finiteValue(data.stateAngularAcceleration),ux:finiteValue(data.statePositionTerm),uv:finiteValue(data.stateVelocityTerm),utheta:finiteValue(data.stateAngleTerm),uomega:finiteValue(data.stateAngularVelocityTerm),ualpha:finiteValue(data.stateAngularAccelerationTerm),outputBeforeLimit:finiteValue(data.stateOutputBeforeLimit),output:finiteValue(data.shadowPidOutput),leftPwm:finiteValue(data.leftPwm),rightPwm:finiteValue(data.rightPwm),saturated:data.stateOutputSaturated?1:0,kx:finiteValue(data.stateGainPosition),kv:finiteValue(data.stateGainVelocity),ktheta:finiteValue(data.stateGainAngle),komega:finiteValue(data.stateGainAngularVelocity),kalpha:finiteValue(data.stateGainAngularAcceleration),velocityBeta:finiteValue(data.stateVelocityFilterBeta),angularAccelerationBeta:finiteValue(data.stateAngularAccelerationFilterBeta),setpoint:finiteValue(data.setpoint),targetSetpoint:finiteValue(data.targetSetpoint),maxPwm:finiteValue(data.maxPwm),controlPeriodMs:finiteValue(data.controlPeriodMs),leftMinPwm:finiteValue(data.motorLeftMinPwm),leftMaxPwm:finiteValue(data.motorLeftMaxPwm),rightMinPwm:finiteValue(data.motorRightMinPwm),rightMaxPwm:finiteValue(data.motorRightMaxPwm),leftCompensation:finiteValue(data.motorLeftCompensation),rightCompensation:finiteValue(data.motorRightCompensation),pwmFrequencyHz:finiteValue(data.pwmFrequencyHz),pwmResolutionBits:finiteValue(data.pwmResolutionBits),pwmFullScale:finiteValue(data.pwmFullScale),wheelDiameterMm:finiteValue(data.wheelDiameterMm),encoderCountsPerRev:finiteValue(data.encoderCountsPerWheelRev),mmPerCount:finiteValue(data.mmPerEncoderCount)});
   if(stateHistory.length>STATE_HISTORY_MAX)stateHistory.splice(0,stateHistory.length-STATE_HISTORY_MAX);
   setText('stateSampleCount',stateHistory.length,0);drawStateChart();
 }
@@ -947,15 +967,15 @@ function drawStateChart(){
   const cssWidth=Math.max(320,canvas.clientWidth||1200),cssHeight=420,dpr=window.devicePixelRatio||1;
   if(canvas.width!==Math.round(cssWidth*dpr)||canvas.height!==Math.round(cssHeight*dpr)){canvas.width=Math.round(cssWidth*dpr);canvas.height=Math.round(cssHeight*dpr);canvas.style.height=cssHeight+'px';}
   const ctx=canvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,cssWidth,cssHeight);ctx.fillStyle='#07101f';ctx.fillRect(0,0,cssWidth,cssHeight);
-  const series=[['Posicion',s=>s.position,'#f59e0b'],['Velocidad',s=>s.velocity,'#22c55e'],['Error angular',s=>s.angleError,'#ef4444'],['Vel. angular',s=>s.angularVelocity,'#38bdf8'],['Acel. angular',s=>s.angularAcceleration,'#c084fc']];
+  const series=[['Posicion (mm)',s=>s.position,'#f59e0b'],['Velocidad (mm/s)',s=>s.velocity,'#22c55e'],['Error angular',s=>s.angleError,'#ef4444'],['Vel. angular',s=>s.angularVelocity,'#38bdf8'],['Acel. angular',s=>s.angularAcceleration,'#c084fc']];
   const samples=stateHistory.slice(-STATE_CHART_SAMPLES),left=104,right=12,bandHeight=cssHeight/series.length,plotWidth=cssWidth-left-right;
   ctx.font='11px Arial';
   series.forEach((entry,index)=>{const top=index*bandHeight,bottom=top+bandHeight;ctx.strokeStyle='#1e293b';ctx.beginPath();ctx.moveTo(0,bottom);ctx.lineTo(cssWidth,bottom);ctx.stroke();const values=samples.map(entry[1]);let min=values.length?Math.min(...values):-1,max=values.length?Math.max(...values):1;if(min>0)min=0;if(max<0)max=0;if(max-min<1e-6){min-=1;max+=1;}const padding=(max-min)*0.08;min-=padding;max+=padding;const y=value=>top+8+(max-value)/(max-min)*(bandHeight-16);ctx.strokeStyle='#334155';ctx.beginPath();ctx.moveTo(left,y(0));ctx.lineTo(cssWidth-right,y(0));ctx.stroke();ctx.fillStyle=entry[2];ctx.fillText(entry[0],8,top+17);ctx.fillStyle='#94a3b8';ctx.fillText(max.toFixed(1),8,top+34);ctx.fillText(min.toFixed(1),8,bottom-8);if(samples.length>1){ctx.strokeStyle=entry[2];ctx.lineWidth=1.5;ctx.beginPath();samples.forEach((sample,sampleIndex)=>{const x=left+sampleIndex/(samples.length-1)*plotWidth,py=y(entry[1](sample));if(sampleIndex===0)ctx.moveTo(x,py);else ctx.lineTo(x,py);});ctx.stroke();}});
 }
 function exportStateCsv(){
   if(!stateHistory.length){alert('No hay muestras para exportar.');return;}
-  const header='elapsed_ms,epoch_ms,position_counts,raw_velocity_counts_s,velocity_counts_s,angle_error_deg,angular_velocity_deg_s,raw_angular_accel_deg_s2,angular_accel_deg_s2,Ux,Uv,Utheta,Uomega,Ualpha,output_before_limit,output_limited,left_pwm,right_pwm,saturated,Kx,Kv,Ktheta,Komega,Kalpha,velocity_filter_beta,angular_accel_filter_beta,angle_setpoint_deg,target_setpoint_deg,max_pwm,control_period_ms,left_min_pwm,left_max_pwm,right_min_pwm,right_max_pwm,left_compensation,right_compensation';
-  const rows=stateHistory.map(s=>[s.elapsedMs,s.epochMs,s.position,s.rawVelocity,s.velocity,s.angleError,s.angularVelocity,s.rawAngularAcceleration,s.angularAcceleration,s.ux,s.uv,s.utheta,s.uomega,s.ualpha,s.outputBeforeLimit,s.output,s.leftPwm,s.rightPwm,s.saturated,s.kx,s.kv,s.ktheta,s.komega,s.kalpha,s.velocityBeta,s.angularAccelerationBeta,s.setpoint,s.targetSetpoint,s.maxPwm,s.controlPeriodMs,s.leftMinPwm,s.leftMaxPwm,s.rightMinPwm,s.rightMaxPwm,s.leftCompensation,s.rightCompensation].join(','));
+  const header='elapsed_ms,epoch_ms,position_mm,raw_velocity_mm_s,velocity_mm_s,position_counts,left_encoder_counts,right_encoder_counts,left_distance_mm,right_distance_mm,left_speed_mm_s,right_speed_mm_s,angle_error_deg,angular_velocity_deg_s,raw_angular_accel_deg_s2,angular_accel_deg_s2,Ux,Uv,Utheta,Uomega,Ualpha,output_before_limit,output_limited,left_pwm,right_pwm,saturated,Kx_pwm_per_mm,Kv_pwm_per_mm_s,Ktheta,Komega,Kalpha,velocity_filter_beta,angular_accel_filter_beta,angle_setpoint_deg,target_setpoint_deg,max_pwm,control_period_ms,left_min_pwm,left_max_pwm,right_min_pwm,right_max_pwm,left_compensation,right_compensation,pwm_frequency_hz,pwm_resolution_bits,pwm_full_scale,wheel_diameter_mm,encoder_counts_per_wheel_rev,mm_per_encoder_count';
+  const rows=stateHistory.map(s=>[s.elapsedMs,s.epochMs,s.position,s.rawVelocity,s.velocity,s.positionCounts,s.leftEncoder,s.rightEncoder,s.leftDistanceMm,s.rightDistanceMm,s.leftSpeedMm,s.rightSpeedMm,s.angleError,s.angularVelocity,s.rawAngularAcceleration,s.angularAcceleration,s.ux,s.uv,s.utheta,s.uomega,s.ualpha,s.outputBeforeLimit,s.output,s.leftPwm,s.rightPwm,s.saturated,s.kx,s.kv,s.ktheta,s.komega,s.kalpha,s.velocityBeta,s.angularAccelerationBeta,s.setpoint,s.targetSetpoint,s.maxPwm,s.controlPeriodMs,s.leftMinPwm,s.leftMaxPwm,s.rightMinPwm,s.rightMaxPwm,s.leftCompensation,s.rightCompensation,s.pwmFrequencyHz,s.pwmResolutionBits,s.pwmFullScale,s.wheelDiameterMm,s.encoderCountsPerRev,s.mmPerCount].join(','));
   const blob=new Blob([[header,...rows].join('\n')],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='robot_estados_'+new Date().toISOString().replace(/[:.]/g,'-')+'.csv';document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
 }
 function applyShadowControl(){send({type:'set_setpoint',setpoint:num('shadowSetpoint')});send({type:'set_pwm_limit',maxPwm:num('shadowMaxPwm')});shadowSetpointDirty=false;shadowMaxPwmDirty=false;}
@@ -1031,7 +1051,10 @@ function connect(){
     setText('imuAccelCalibrated',data.imuAccelCalibrated?'VALIDA':'PENDIENTE',0);setText('imuGyroCalibrated',data.imuGyroCalibrated?'VALIDA':'PENDIENTE',0);setText('imuMagCalibrated',data.imuMagCalibrated?'VALIDA':'PENDIENTE',0);setText('imuVerticalCalibrated',data.imuVerticalCalibrated?'VALIDA':'PENDIENTE',0);setText('imuFilterReady',data.imuFilterReady?'LISTO':'NO',0);
     setText('imuCalibrationStatus',data.imuCalibrationStatus,0);setText('imuCalibrationMode',data.imuCalibrationMode,0);setText('imuCalibrationSamples',data.imuCalibrationSamples,0);setText('imuCalibrationStored',data.imuCalibrationStored?'CARGADA':'VACIA',0);setText('imuAccelPose',data.imuAccelWizardActive?(data.imuAccelPoseIndex+1)+'/6 '+data.imuAccelPoseName:'No iniciado',0);
     setText('shadowStatus',data.faultMessage,0);setText('statePosition',data.statePosition,1);setText('stateRawVelocity',data.stateRawVelocity,1);setText('stateVelocity',data.stateVelocity,1);setText('stateAngleError',data.stateAngleError,3);setText('stateAngularVelocity',data.stateAngularVelocity,2);setText('stateRawAngularAcceleration',data.stateRawAngularAcceleration,1);setText('stateAngularAcceleration',data.stateAngularAcceleration,1);setText('statePositionTerm',data.statePositionTerm,1);setText('stateVelocityTerm',data.stateVelocityTerm,1);setText('stateAngleTerm',data.stateAngleTerm,1);setText('stateAngularVelocityTerm',data.stateAngularVelocityTerm,1);setText('stateAngularAccelerationTerm',data.stateAngularAccelerationTerm,1);setText('stateOutputBeforeLimit',data.stateOutputBeforeLimit,1);setText('stateOutputSaturated',data.stateOutputSaturated?'SI':'NO',0);setText('stateSaturationCorrection',data.stateSaturationCorrection,1);setText('shadowOutput',data.shadowPidOutput,0);setText('shadowLeftPwm',data.leftPwm,0);setText('shadowRightPwm',data.rightPwm,0);setText('shadowSampleAge',data.imuSampleAgeMs,0);setText('shadowAppliedSetpoint',data.setpoint,3);setText('controlSettingsStatus',(data.controlSettingsSaved?'OK: ':'ERROR: ')+data.controlSettingsMessage,0);setInput('stateGainPosition',data.stateGainPosition,5,stateFeedbackDirty);setInput('stateGainVelocity',data.stateGainVelocity,5,stateFeedbackDirty);setInput('stateGainAngle',data.stateGainAngle,3,stateFeedbackDirty);setInput('stateGainAngularVelocity',data.stateGainAngularVelocity,3,stateFeedbackDirty);setInput('stateGainAngularAcceleration',data.stateGainAngularAcceleration,6,stateFeedbackDirty);setInput('stateVelocityFilterBeta',data.stateVelocityFilterBeta,3,stateFeedbackDirty);setInput('stateAngularAccelerationFilterBeta',data.stateAngularAccelerationFilterBeta,3,stateFeedbackDirty);setInput('shadowSetpoint',data.targetSetpoint,3,shadowSetpointDirty);setInput('shadowMaxPwm',data.maxPwm,0,shadowMaxPwmDirty);if(data.stateCalibrationWizardActive)renderStateWizard(data.stateCalibrationStage);
-    benchArmed=data.benchTestArmed;setText('benchStatus',data.benchTestArmed?(data.benchTestActive?'ARMADA - MOTOR ACTIVO':'ARMADA'):'DESARMADA',0);setText('benchRemaining',data.benchArmRemainingMs/1000,1);setText('benchWatchdog',data.benchWatchdogAgeMs,0);setText('benchCommand',data.benchTestCommand,0);setText('benchLeftPwm',data.leftPwm,0);setText('benchRightPwm',data.rightPwm,0);setText('benchLeftSpeed',data.leftSpeed,0);setText('benchRightSpeed',data.rightSpeed,0);setText('benchRawLeft',data.rawLeftEncoder,0);setText('benchRawRight',data.rawRightEncoder,0);setText('benchCorrectedLeft',data.leftEncoder,0);setText('benchCorrectedRight',data.rightEncoder,0);document.getElementById('benchArm').disabled=data.benchTestArmed;document.getElementById('benchDisarm').disabled=!data.benchTestArmed;document.querySelectorAll('.bench-drive').forEach(button=>button.disabled=!data.benchTestArmed);
+    setText('statePositionCounts',data.statePositionCounts,1);
+    setText('pwmHardwareConfig',`${data.pwmFrequencyHz} Hz / ${data.pwmResolutionBits} bits / 0-${data.pwmFullScale}`,0);
+    setText('encoderPhysicalConfig',`${data.wheelDiameterMm.toFixed(1)} mm / ${data.encoderCountsPerWheelRev.toFixed(2)} cuentas/vuelta / ${data.mmPerEncoderCount.toFixed(6)} mm/cuenta`,0);
+    benchArmed=data.benchTestArmed;setText('benchStatus',data.benchTestArmed?(data.benchTestActive?'ARMADA - MOTOR ACTIVO':'ARMADA'):'DESARMADA',0);setText('benchRemaining',data.benchArmRemainingMs/1000,1);setText('benchWatchdog',data.benchWatchdogAgeMs,0);setText('benchCommand',data.benchTestCommand,0);setText('benchLeftPwm',data.leftPwm,0);setText('benchRightPwm',data.rightPwm,0);setText('benchLeftSpeed',data.leftSpeed,0);setText('benchRightSpeed',data.rightSpeed,0);setText('benchLeftSpeedMm',data.leftSpeedMmPerSec,1);setText('benchRightSpeedMm',data.rightSpeedMmPerSec,1);setText('benchRawLeft',data.rawLeftEncoder,0);setText('benchRawRight',data.rawRightEncoder,0);setText('benchCorrectedLeft',data.leftEncoder,0);setText('benchCorrectedRight',data.rightEncoder,0);setText('benchLeftDistanceMm',data.leftDistanceMm,1);setText('benchRightDistanceMm',data.rightDistanceMm,1);document.getElementById('benchArm').disabled=data.benchTestArmed;document.getElementById('benchDisarm').disabled=!data.benchTestArmed;document.querySelectorAll('.bench-drive').forEach(button=>button.disabled=!data.benchTestArmed);
     document.getElementById('imuCalibrationValues').textContent=`A offset: ${data.imuAccelOffset.map(v=>v.toFixed(4)).join(', ')}\nA escala: ${data.imuAccelScale.map(v=>v.toFixed(4)).join(', ')}\nG offset: ${data.imuGyroOffset.map(v=>v.toFixed(3)).join(', ')}\nM offset: ${data.imuMagOffset.map(v=>v.toFixed(1)).join(', ')}\nM escala: ${data.imuMagScale.map(v=>v.toFixed(3)).join(', ')}\nVertical: roll ${data.imuVerticalRollDeg.toFixed(2)}, pitch ${data.imuVerticalPitchDeg.toFixed(2)}`;
     const imuBusy=data.imuCalibrationMode!=='idle';document.getElementById('sensorGyroCal').disabled=imuBusy;document.getElementById('sensorMagCal').disabled=imuBusy||!data.imuRawMagReady;document.getElementById('sensorVerticalCal').disabled=imuBusy||!data.imuFilterReady;document.getElementById('sensorAccelStart').disabled=imuBusy;document.getElementById('sensorAccelCapture').disabled=imuBusy||!data.imuAccelWizardActive;document.getElementById('sensorClearCal').disabled=imuBusy;
     setText('motorsEnabled',data.motorsEnabled?'ON':'OFF',0); setText('imuReady',data.imuReady?'OK':'NO',0); setText('safetyStop',data.safetyStop?'STOP':'OK',0);

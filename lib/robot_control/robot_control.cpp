@@ -782,6 +782,9 @@ void fillRawImuState() {
           sizeof(state.controlSettingsMessage));
   const StateFeedback::State feedbackState = StateFeedback::getState();
   const StateFeedback::Gains feedbackGains = StateFeedback::getGains();
+  state.statePositionCounts =
+      (static_cast<float>(EncodersTest::leftCount()) +
+       static_cast<float>(EncodersTest::rightCount())) * 0.5f;
   state.statePosition = feedbackState.position;
   state.stateRawVelocity = feedbackState.rawVelocity;
   state.stateVelocity = feedbackState.velocity;
@@ -849,10 +852,16 @@ void fillRawImuState() {
   state.rawRightEncoder = EncodersTest::rawRightCount();
   state.correctedLeftEncoder = EncodersTest::leftCount();
   state.correctedRightEncoder = EncodersTest::rightCount();
+  state.leftDistanceMm = EncodersTest::leftDistanceMm();
+  state.rightDistanceMm = EncodersTest::rightDistanceMm();
   state.leftSpeed = leftSpeed;
   state.rightSpeed = rightSpeed;
   state.speedAverage = averageSpeed;
   state.speedDifference = speedDifference;
+  state.leftSpeedMmPerSec = EncodersTest::countsToMillimeters(leftSpeed);
+  state.rightSpeedMmPerSec = EncodersTest::countsToMillimeters(rightSpeed);
+  state.speedAverageMmPerSec = EncodersTest::countsToMillimeters(averageSpeed);
+  state.speedDifferenceMmPerSec = EncodersTest::countsToMillimeters(speedDifference);
   state.leftPwm = MotorsTest::getLeftPwm();
   state.rightPwm = MotorsTest::getRightPwm();
   state.balancePwm = balancePwm;
@@ -1174,10 +1183,16 @@ void fillSharedState() {
   state.rawRightEncoder = EncodersTest::rawRightCount();
   state.correctedLeftEncoder = EncodersTest::leftCount();
   state.correctedRightEncoder = EncodersTest::rightCount();
+  state.leftDistanceMm = EncodersTest::leftDistanceMm();
+  state.rightDistanceMm = EncodersTest::rightDistanceMm();
   state.leftSpeed = leftSpeed;
   state.rightSpeed = rightSpeed;
   state.speedAverage = averageSpeed;
   state.speedDifference = speedDifference;
+  state.leftSpeedMmPerSec = EncodersTest::countsToMillimeters(leftSpeed);
+  state.rightSpeedMmPerSec = EncodersTest::countsToMillimeters(rightSpeed);
+  state.speedAverageMmPerSec = EncodersTest::countsToMillimeters(averageSpeed);
+  state.speedDifferenceMmPerSec = EncodersTest::countsToMillimeters(speedDifference);
   state.encoderSyncError = encoderSyncError;
   state.encoderSyncCorrection = encoderSyncCorrection;
   state.encoderSyncEnabled = encoderSyncEnabled;

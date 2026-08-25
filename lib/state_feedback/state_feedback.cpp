@@ -15,8 +15,10 @@ float previousAngularVelocity = 0.0f;
 bool initialized = false;
 int maximumOutput = Config::SHADOW_PID_MAX_PWM;
 
-float averageCounts(long leftCount, long rightCount) {
-  return (static_cast<float>(leftCount) + static_cast<float>(rightCount)) * 0.5f;
+float averagePositionMm(long leftCount, long rightCount) {
+  const float averageCounts =
+      (static_cast<float>(leftCount) + static_cast<float>(rightCount)) * 0.5f;
+  return averageCounts * static_cast<float>(Config::MM_PER_ENCODER_COUNT);
 }
 
 }  // namespace
@@ -34,7 +36,7 @@ void begin(const Gains &initialGains, float velocityFilterBeta,
 
 void reset(long leftCount, long rightCount, float angularVelocityDegPerSec) {
   state = State{};
-  previousPosition = averageCounts(leftCount, rightCount);
+  previousPosition = averagePositionMm(leftCount, rightCount);
   previousAngularVelocity = isfinite(angularVelocityDegPerSec) ? angularVelocityDegPerSec : 0.0f;
   initialized = true;
 }
@@ -54,12 +56,12 @@ void update(long leftCount, long rightCount, float angleDeg, float angleSetpoint
     return;
   }
 
-  state.position = averageCounts(leftCount, rightCount);
+  state.position = averagePositionMm(leftCount, rightCount);
   state.angleError = angleDeg - angleSetpointDeg;
   state.angularVelocity = angularVelocityDegPerSec;
   if (!initialized) {
     reset(leftCount, rightCount, angularVelocityDegPerSec);
-    state.position = averageCounts(leftCount, rightCount);
+    state.position = averagePositionMm(leftCount, rightCount);
     state.angleError = angleDeg - angleSetpointDeg;
     state.angularVelocity = angularVelocityDegPerSec;
   }

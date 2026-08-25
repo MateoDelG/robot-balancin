@@ -41,18 +41,31 @@ constexpr float SENSOR_FILTER_ALPHA_MAX = 0.999f;
 constexpr unsigned long SENSOR_TRACE_INTERVAL_MS = 19;
 constexpr unsigned long SENSOR_TRACE_MIN_DURATION_MS = 5000;
 constexpr unsigned long SENSOR_TRACE_MAX_DURATION_MS = 300000;
-constexpr double SHADOW_PID_KP = 10.0;
+constexpr uint32_t PWM_FREQUENCY_HZ = 20000;
+constexpr uint8_t PWM_RESOLUTION_BITS = 11;
+constexpr int PWM_MAX_DUTY = (1 << PWM_RESOLUTION_BITS) - 1;
+constexpr int LEGACY_PWM_MAX_DUTY = 255;
+constexpr double PWM_SCALE_FROM_LEGACY =
+    static_cast<double>(PWM_MAX_DUTY) / static_cast<double>(LEGACY_PWM_MAX_DUTY);
+constexpr int scaleLegacyPwm(int value) {
+  return (value * PWM_MAX_DUTY + LEGACY_PWM_MAX_DUTY / 2) / LEGACY_PWM_MAX_DUTY;
+}
+constexpr double scaleLegacyPwmGain(double value) {
+  return value * PWM_SCALE_FROM_LEGACY;
+}
+
+constexpr double SHADOW_PID_KP = scaleLegacyPwmGain(10.0);
 constexpr double SHADOW_PID_KI = 0.0;
-constexpr double SHADOW_PID_KD = 0.5;
-constexpr int SHADOW_PID_MAX_PWM = 255;
+constexpr double SHADOW_PID_KD = scaleLegacyPwmGain(0.5);
+constexpr int SHADOW_PID_MAX_PWM = PWM_MAX_DUTY;
 constexpr unsigned long SHADOW_IMU_TIMEOUT_MS = 50;
 constexpr float PID_ARM_MAX_ERROR_DEG = 10.0f;
 constexpr bool AUTO_START_CONTROL_ENABLED = true;
 constexpr float AUTO_START_ANGLE_WINDOW_DEG = 10.0f;
 constexpr unsigned long AUTO_START_STABLE_MS = 5000;
 constexpr float PID_SETPOINT_SLEW_DEG_PER_SEC = 2.0f;
-constexpr int BENCH_TEST_DEFAULT_PWM = 70;
-constexpr int BENCH_TEST_MAX_PWM = 255;
+constexpr int BENCH_TEST_DEFAULT_PWM = scaleLegacyPwm(70);
+constexpr int BENCH_TEST_MAX_PWM = PWM_MAX_DUTY;
 constexpr unsigned long BENCH_TEST_ARM_TIMEOUT_MS = 30000;
 constexpr unsigned long BENCH_TEST_WATCHDOG_MS = 250;
 
@@ -60,6 +73,15 @@ constexpr int PIN_ENCODER_LEFT_A = 34;
 constexpr int PIN_ENCODER_LEFT_B = 35;
 constexpr int PIN_ENCODER_RIGHT_A = 32;
 constexpr int PIN_ENCODER_RIGHT_B = 33;
+constexpr double WHEEL_DIAMETER_MM = 70.0;
+constexpr double WHEEL_CIRCUMFERENCE_MM = WHEEL_DIAMETER_MM * 3.14159265358979323846;
+constexpr double ENCODER_COUNTS_PER_WHEEL_REV = 680.35;
+constexpr double MM_PER_ENCODER_COUNT =
+    WHEEL_CIRCUMFERENCE_MM / ENCODER_COUNTS_PER_WHEEL_REV;
+constexpr double ENCODER_COUNTS_PER_MM = 1.0 / MM_PER_ENCODER_COUNT;
+constexpr double MOTOR_MAX_RPM = 500.0;
+constexpr double WHEEL_MAX_SPEED_MM_PER_SEC =
+    MOTOR_MAX_RPM * WHEEL_CIRCUMFERENCE_MM / 60.0;
 
 constexpr int PIN_MOTOR_LEFT_ENABLE_PWM = 25;
 constexpr int PIN_MOTOR_LEFT_IN1 = 26;
@@ -71,28 +93,26 @@ constexpr int PIN_MOTOR_RIGHT_IN2 = 12;
 
 constexpr int PWM_CHANNEL_MOTOR_LEFT = 0;
 constexpr int PWM_CHANNEL_MOTOR_RIGHT = 1;
-constexpr uint32_t PWM_FREQUENCY_HZ = 2000;
-constexpr uint8_t PWM_RESOLUTION_BITS = 8;
-constexpr int PWM_MAX_DUTY = 255;
-constexpr int MOTOR_TEST_PWM = 255;
-constexpr int MOTOR_TEST_MAX_PWM = 255;
+constexpr int MOTOR_TEST_PWM = PWM_MAX_DUTY;
+constexpr int MOTOR_TEST_MAX_PWM = PWM_MAX_DUTY;
 constexpr unsigned long MOTOR_TEST_RUN_MS = 1000;
 constexpr unsigned long MOTOR_TEST_PAUSE_MS = 700;
 
 constexpr bool MOTOR_LEFT_INVERTED = false;
 constexpr bool MOTOR_RIGHT_INVERTED = false;
-constexpr int INITIAL_MOTOR_LEFT_MIN_PWM = 58;
-constexpr int INITIAL_MOTOR_LEFT_MAX_PWM = 255;
-constexpr int INITIAL_MOTOR_RIGHT_MIN_PWM = 58;
-constexpr int INITIAL_MOTOR_RIGHT_MAX_PWM = 255;
+constexpr int INITIAL_MOTOR_LEFT_MIN_PWM = scaleLegacyPwm(58);
+constexpr int INITIAL_MOTOR_LEFT_MAX_PWM = PWM_MAX_DUTY;
+constexpr int INITIAL_MOTOR_RIGHT_MIN_PWM = scaleLegacyPwm(58);
+constexpr int INITIAL_MOTOR_RIGHT_MAX_PWM = PWM_MAX_DUTY;
 constexpr int MOTOR_PWM_LIMIT_MIN = 0;
-constexpr int MOTOR_PWM_LIMIT_MAX = 255;
+constexpr int MOTOR_PWM_LIMIT_MAX = PWM_MAX_DUTY;
 constexpr double INITIAL_MOTOR_LEFT_COMPENSATION = 1.0;
 constexpr double INITIAL_MOTOR_RIGHT_COMPENSATION = 1.0;
 constexpr double MOTOR_COMPENSATION_MIN = 0.0;
 constexpr double MOTOR_COMPENSATION_MAX = 2.0;
-constexpr double STATE_GAIN_MIN = -1000.0;
-constexpr double STATE_GAIN_MAX = 1000.0;
+constexpr double STATE_GAIN_MAX =
+    scaleLegacyPwmGain(1000.0) / MM_PER_ENCODER_COUNT;
+constexpr double STATE_GAIN_MIN = -STATE_GAIN_MAX;
 constexpr float INITIAL_VELOCITY_FILTER_BETA = 0.20f;
 constexpr float INITIAL_ANGULAR_ACCEL_FILTER_BETA = 0.10f;
 constexpr float STATE_FILTER_BETA_MIN = 0.01f;
@@ -121,13 +141,13 @@ constexpr bool INVERT_GYRO_RATE = false;
 constexpr bool INVERT_TURN_GYRO = false;
 constexpr float TURN_GYRO_DEADBAND_DPS = 5.0f;
 constexpr bool INITIAL_GYRO_Z_HOLD_ENABLED = true;
-constexpr double INITIAL_GYRO_Z_HOLD_KP = 0.35;
+constexpr double INITIAL_GYRO_Z_HOLD_KP = scaleLegacyPwmGain(0.35);
 constexpr double GYRO_Z_HOLD_KP_MIN = 0.0;
-constexpr double GYRO_Z_HOLD_KP_MAX = 5.0;
+constexpr double GYRO_Z_HOLD_KP_MAX = scaleLegacyPwmGain(5.0);
 constexpr float GYRO_Z_HOLD_DEADBAND_DPS = 3.0f;
-constexpr int INITIAL_GYRO_Z_HOLD_MAX_CORRECTION = 40;
+constexpr int INITIAL_GYRO_Z_HOLD_MAX_CORRECTION = scaleLegacyPwm(40);
 constexpr int GYRO_Z_HOLD_MAX_CORRECTION_MIN = 0;
-constexpr int GYRO_Z_HOLD_MAX_CORRECTION_MAX = 100;
+constexpr int GYRO_Z_HOLD_MAX_CORRECTION_MAX = scaleLegacyPwm(100);
 constexpr bool INITIAL_SPEED_HOLD_ENABLED = true;
 constexpr bool INVERT_SPEED_HOLD_CORRECTION = true;
 constexpr double INITIAL_SPEED_HOLD_KP = 0.003;
@@ -141,7 +161,7 @@ constexpr double SPEED_HOLD_MAX_ANGLE_MAX_DEG = 6.0;
 
 constexpr float INITIAL_MAX_DRIVE_ANGLE_DEG = 2.0f;
 
-constexpr int INITIAL_MAX_DRIVE_TURN_PWM = 30;
+constexpr int INITIAL_MAX_DRIVE_TURN_PWM = scaleLegacyPwm(30);
 constexpr unsigned long DRIVE_COMMAND_TIMEOUT_MS = 300;
 
 constexpr float DRIVE_COMMAND_STEP = 0.08f;
@@ -159,47 +179,47 @@ constexpr double AUTO_TRIM_APPLY_STEP_DEG = 0.01;
 constexpr unsigned long AUTO_TRIM_STABLE_BEFORE_START_MS = 500;
 constexpr unsigned long AUTO_TRIM_TEST_WINDOW_MS = 500;
 constexpr float AUTO_TRIM_MAX_SPEED_COUNTS_PER_SEC = 2000.0f;
-constexpr int AUTO_TRIM_MAX_PWM_FOR_TEST = 160;
+constexpr int AUTO_TRIM_MAX_PWM_FOR_TEST = scaleLegacyPwm(160);
 constexpr double AUTO_TRIM_MIN_SCORE_DELTA = 0.5;
 constexpr double AUTO_TRIM_TARGET_SCORE = 8.0;
 constexpr uint8_t AUTO_TRIM_MAX_NO_IMPROVEMENT_CYCLES = 50;
 
-constexpr double INITIAL_PID_KP = 15;
-constexpr double INITIAL_PID_KI = 300;
-constexpr double INITIAL_PID_KD = 0.9;
+constexpr double INITIAL_PID_KP = scaleLegacyPwmGain(15);
+constexpr double INITIAL_PID_KI = scaleLegacyPwmGain(300);
+constexpr double INITIAL_PID_KD = scaleLegacyPwmGain(0.9);
 constexpr double INITIAL_ANGLE_SETPOINT_DEG = 5;
 
-constexpr int INITIAL_PID_MAX_PWM = 200;
+constexpr int INITIAL_PID_MAX_PWM = scaleLegacyPwm(200);
 constexpr bool INVERT_PID_OUTPUT = false;
 constexpr double INITIAL_INTEGRAL_LIMIT = 0.25;
 constexpr double INTEGRAL_LIMIT_MIN = 0.0;
 constexpr double INTEGRAL_LIMIT_MAX = 2.0;
-constexpr double INITIAL_I_TERM_LIMIT = 20.0;
+constexpr double INITIAL_I_TERM_LIMIT = scaleLegacyPwmGain(20.0);
 constexpr double I_TERM_LIMIT_MIN = 0.0;
-constexpr double I_TERM_LIMIT_MAX = 100.0;
+constexpr double I_TERM_LIMIT_MAX = scaleLegacyPwmGain(100.0);
 constexpr bool INITIAL_ENCODER_SYNC_ENABLED = false;
-constexpr double INITIAL_ENCODER_SYNC_KP = 0.02;
+constexpr double INITIAL_ENCODER_SYNC_KP = scaleLegacyPwmGain(0.02);
 constexpr double ENCODER_SYNC_KP_MIN = 0.0;
-constexpr double ENCODER_SYNC_KP_MAX = 2.0;
+constexpr double ENCODER_SYNC_KP_MAX = scaleLegacyPwmGain(2.0);
 constexpr float INITIAL_ENCODER_SYNC_DEADBAND = 1.0f;
 constexpr float ENCODER_SYNC_DEADBAND_MIN = 0.0f;
 constexpr float ENCODER_SYNC_DEADBAND_MAX = 300.0f;
-constexpr int INITIAL_ENCODER_SYNC_MAX_CORRECTION = 5;
+constexpr int INITIAL_ENCODER_SYNC_MAX_CORRECTION = scaleLegacyPwm(5);
 constexpr int ENCODER_SYNC_MAX_CORRECTION_MIN = 0;
-constexpr int ENCODER_SYNC_MAX_CORRECTION_MAX = 80;
+constexpr int ENCODER_SYNC_MAX_CORRECTION_MAX = scaleLegacyPwm(80);
 constexpr float INITIAL_ENCODER_SYNC_TARGET_DIFFERENCE = 1.0f;
 constexpr float ENCODER_SYNC_TARGET_DIFFERENCE_MIN = -300.0f;
 constexpr float ENCODER_SYNC_TARGET_DIFFERENCE_MAX = 300.0f;
 constexpr float MAX_SAFE_ANGLE_DEG = 35.0f;
 constexpr unsigned long PID_SERIAL_PRINT_INTERVAL_MS = 100;
 constexpr double PID_KP_MIN = 0.0;
-constexpr double PID_KP_MAX = 1000.0;
+constexpr double PID_KP_MAX = scaleLegacyPwmGain(1000.0);
 constexpr double PID_KI_MIN = 0.0;
-constexpr double PID_KI_MAX = 1000.0;
+constexpr double PID_KI_MAX = scaleLegacyPwmGain(1000.0);
 constexpr double PID_KD_MIN = 0.0;
-constexpr double PID_KD_MAX = 1000.0;
+constexpr double PID_KD_MAX = scaleLegacyPwmGain(1000.0);
 constexpr int PID_MAX_PWM_MIN = 0;
-constexpr int PID_MAX_PWM_MAX = 255;
+constexpr int PID_MAX_PWM_MAX = PWM_MAX_DUTY;
 constexpr double SETPOINT_MIN_DEG = -10.0;
 constexpr double SETPOINT_MAX_DEG = 10.0;
 constexpr float FILTER_ALPHA_MIN = 0.80f;
